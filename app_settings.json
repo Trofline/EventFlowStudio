@@ -1,0 +1,8 @@
+{
+  "HideInstructions": false,
+  "Language": "Deutsch",
+  "RunAsAdmin": false,
+  "AutoStartWindows": false,
+  "AutoUpdate": true,
+  "GithubRepo": "DeinName/EventFlowStudio"
+}

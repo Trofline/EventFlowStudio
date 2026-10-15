@@ -1,0 +1,15 @@
+[
+  {
+    "Id": "70573c21-bbd6-45e6-a8aa-06cbd7947574",
+    "Name": "Standard Profil",
+    "Description": "Beschreibung...",
+    "IsActive": true,
+    "Trigger": {
+      "Type": "ProcessStarted",
+      "TargetName": "",
+      "HotkeyModifier": 0,
+      "HotkeyVK": 0
+    },
+    "Actions": []
+  }
+]
