@@ -1,7 +1,7 @@
-﻿using EventFlowStudio.ViewModels;
-using System;
+﻿using System;
 using System.Windows;
 using System.Windows.Input;
+using EventFlowStudio.ViewModels;
 
 namespace EventFlowStudio
 {
@@ -14,7 +14,39 @@ namespace EventFlowStudio
         {
             InitializeComponent();
             SetupTrayIcon();
+
+            this.Loaded += MainWindow_Loaded;
             this.Closing += MainWindow_Closing;
+        }
+
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel vm)
+            {
+                vm.ToggleMainWindowRequested += ToggleWindowVisibility;
+
+                // Verstecke die App beim Start, wenn das in den Settings steht
+                if (vm.AppSettings.StartMinimized)
+                {
+                    if (vm.AppSettings.EnableSystemTray) this.Hide();
+                    else this.WindowState = WindowState.Minimized;
+                }
+            }
+        }
+
+        private void ToggleWindowVisibility()
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                if (this.IsVisible)
+                {
+                    this.Hide();
+                }
+                else
+                {
+                    ShowMainWindow();
+                }
+            });
         }
 
         private void SetupTrayIcon()
@@ -38,6 +70,7 @@ namespace EventFlowStudio
             this.Show();
             this.WindowState = WindowState.Normal;
             this.Activate();
+            this.Focus();
         }
 
         private void QuitApplication()
@@ -69,7 +102,6 @@ namespace EventFlowStudio
 
         private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
-            // Prüft, ob System-Tray in den Settings aktiviert ist
             bool trayEnabled = true;
             if (DataContext is MainViewModel vm)
             {
@@ -87,12 +119,10 @@ namespace EventFlowStudio
             }
         }
 
-        // Hotkey Einlese-Logik für den Hotkey Recorder
-        // Hotkey Einlese-Logik für den Hotkey Recorder
+        // Hotkey Einlese-Logik für Profile
         private void HotkeyTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
             e.Handled = true;
-
             var modifier = System.Windows.Input.Keyboard.Modifiers;
             var key = (e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key);
 
@@ -100,34 +130,55 @@ namespace EventFlowStudio
                 key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt ||
                 key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
                 key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin)
-            {
                 return;
-            }
 
             string hotkeyText = "";
             if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Control)) hotkeyText += "Ctrl + ";
             if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Alt)) hotkeyText += "Alt + ";
             if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Shift)) hotkeyText += "Shift + ";
             if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Windows)) hotkeyText += "Win + ";
-
             hotkeyText += key.ToString();
 
-            if (sender is System.Windows.Controls.TextBox tb)
+            if (sender is System.Windows.Controls.TextBox tb && DataContext is MainViewModel vm && vm.SelectedPreset != null)
+            {
+                if (tb.DataContext is EventFlowStudio.Models.TriggerCondition trigger)
+                {
+                    tb.Text = hotkeyText;
+                    trigger.TargetName = hotkeyText;
+                    trigger.HotkeyModifier = (uint)modifier;
+                    trigger.HotkeyVK = (uint)KeyInterop.VirtualKeyFromKey(key);
+                    vm.MarkDirty();
+                }
+            }
+        }
+
+        // NEU: Hotkey Einlese-Logik für die App-Settings (Fenster umschalten)
+        private void SettingsHotkey_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            e.Handled = true;
+            var modifier = System.Windows.Input.Keyboard.Modifiers;
+            var key = (e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key);
+
+            if (key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl ||
+                key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt ||
+                key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
+                key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin)
+                return;
+
+            string hotkeyText = "";
+            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Control)) hotkeyText += "Ctrl + ";
+            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Alt)) hotkeyText += "Alt + ";
+            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Shift)) hotkeyText += "Shift + ";
+            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Windows)) hotkeyText += "Win + ";
+            hotkeyText += key.ToString();
+
+            if (sender is System.Windows.Controls.TextBox tb && DataContext is MainViewModel vm)
             {
                 tb.Text = hotkeyText;
-
-                // K Korrigiert: Zugriff auf den aktuellen Trigger der Liste (z.B. den ersten Trigger)
-                if (DataContext is MainViewModel vm && vm.SelectedPreset != null)
-                {
-                    // Wir suchen das passende Trigger-Element aus der Liste des DataContexts der TextBox
-                    if (tb.DataContext is EventFlowStudio.Models.TriggerCondition trigger)
-                    {
-                        trigger.TargetName = hotkeyText;
-                        trigger.HotkeyModifier = (uint)modifier;
-                        trigger.HotkeyVK = (uint)KeyInterop.VirtualKeyFromKey(key);
-                        vm.MarkDirty();
-                    }
-                }
+                vm.AppSettings.ToggleHotkeyText = hotkeyText;
+                vm.AppSettings.ToggleHotkeyModifier = (uint)modifier;
+                vm.AppSettings.ToggleHotkeyVK = (uint)KeyInterop.VirtualKeyFromKey(key);
+                vm.MarkDirty();
             }
         }
     }

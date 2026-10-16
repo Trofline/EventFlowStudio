@@ -56,7 +56,11 @@ namespace EventFlowStudio.Services
         public string LanguageLabel => CurrentLanguage == "Deutsch" ? "Anzeigesprache:" : "Display Language:";
 
         public string SystemIntegrationHeader => CurrentLanguage == "Deutsch" ? "System Integration & Tray" : "System Integration & Tray";
-        public string SystemTrayCheckbox => CurrentLanguage == "Deutsch" ? "In den System-Tray (neben die Uhr) minimieren beim Schließen" : "Minimize to System Tray on close";
+        public string SystemTrayCheckbox => CurrentLanguage == "Deutsch" ? "In den System-Tray minimieren beim Schließen" : "Minimize to System Tray on close";
+        // NEU:
+        public string StartMinimizedCheckbox => CurrentLanguage == "Deutsch" ? "Minimiert im Hintergrund starten" : "Start minimized in background";
+        public string ToggleHotkeyLabel => CurrentLanguage == "Deutsch" ? "Hotkey zum Anzeigen/Verstecken:" : "Show/Hide Window Hotkey:";
+
         public string AutoStartCheckbox => CurrentLanguage == "Deutsch" ? "EventFlow Studio automatisch beim Windows-Start öffnen" : "Start EventFlow Studio automatically with Windows";
         public string AlwaysAdminCheckbox => CurrentLanguage == "Deutsch" ? "Immer als Administrator ausführen" : "Always run as Administrator";
         public string RestartAdminBtn => CurrentLanguage == "Deutsch" ? "🔄 Jetzt mit Admin-Rechten neu starten" : "🔄 Restart with Admin rights now";

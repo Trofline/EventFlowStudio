@@ -31,11 +31,14 @@ namespace EventFlowStudio.ViewModels
 
         public string[] AvailableLanguages => new[] { "Deutsch", "English" };
 
-        public int SelectedTabIndex { get => _selectedTabIndex; set { _selectedTabIndex = value; MarkDirty(); OnPropertyChanged(); } }
-        public Preset? SelectedPreset { get => _selectedPreset; set { _selectedPreset = value; OnPropertyChanged(); } }
-        public string LogOutput { get => _logOutput; set { _logOutput = value; OnPropertyChanged(); } }
+        // Die Werte werden jetzt nur noch gesetzt, wenn sie sich TATSÄCHLICH geändert haben.
+        // Außerdem wurde hier das pauschale MarkDirty() beim Tab-Wechsel komplett entfernt.
+        public int SelectedTabIndex { get => _selectedTabIndex; set { if (_selectedTabIndex != value) { _selectedTabIndex = value; OnPropertyChanged(); } } }
+        public Preset? SelectedPreset { get => _selectedPreset; set { if (_selectedPreset != value) { _selectedPreset = value; OnPropertyChanged(); } } }
+        public string LogOutput { get => _logOutput; set { if (_logOutput != value) { _logOutput = value; OnPropertyChanged(); } } }
+        public bool IsDirty { get => _isDirty; set { if (_isDirty != value) { _isDirty = value; OnPropertyChanged(); } } }
 
-        public bool IsDirty { get => _isDirty; set { _isDirty = value; OnPropertyChanged(); } }
+        public event Action? ToggleMainWindowRequested;
 
         public ICommand AddPresetCommand { get; }
         public ICommand DeletePresetCommand { get; }
@@ -71,6 +74,7 @@ namespace EventFlowStudio.ViewModels
             ImportCommand = new RelayCommand(_ => { ImportPresets(); MarkDirty(); });
 
             _engine.LogMessage += msg => LogOutput = $"[{DateTime.Now:HH:mm:ss}] {msg}\n" + LogOutput;
+            _engine.ToggleMainWindow += () => ToggleMainWindowRequested?.Invoke();
 
             _engine.Initialize();
 
@@ -93,6 +97,8 @@ namespace EventFlowStudio.ViewModels
             EnsureAutoStart();
 
             if (Presets.Count > 0) SelectedPreset = Presets[0];
+
+            // Setzt alles ganz am Schluss sauber zurück
             IsDirty = false;
         }
 

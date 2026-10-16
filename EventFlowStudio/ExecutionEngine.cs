@@ -27,6 +27,7 @@ namespace EventFlowStudio.Services
         private GithubUpdater? _updater;
 
         public event Action<string>? LogMessage;
+        public event Action? ToggleMainWindow; // NEU: Event für das Fenster
 
         public ExecutionEngine()
         {
@@ -65,6 +66,12 @@ namespace EventFlowStudio.Services
 
         private void OnGlobalKeyPressed(uint modifiers, uint vkCode)
         {
+            // Prüfen, ob der Globale App-Hotkey gedrückt wurde
+            if (Settings.ToggleHotkeyModifier != 0 && Settings.ToggleHotkeyModifier == modifiers && Settings.ToggleHotkeyVK == vkCode)
+            {
+                ToggleMainWindow?.Invoke();
+            }
+
             foreach (var preset in Presets.Where(p => p.IsActive))
             {
                 foreach (var trigger in preset.Triggers.Where(t => t.Type == TriggerType.GlobalHotkey))
@@ -141,7 +148,6 @@ namespace EventFlowStudio.Services
         {
             foreach (var action in preset.Actions.Where(a => a.IsEnabled && a.TerminateOnTriggerProcessExit))
             {
-                // NEU: Verzögerung beim Beenden (Exit-Delay) abwarten
                 if (action.ExitDelaySeconds > 0)
                 {
                     Log($"Warte {action.ExitDelaySeconds} Sek. vor dem Beenden von {Path.GetFileName(action.TargetPath)}...");
@@ -211,7 +217,6 @@ namespace EventFlowStudio.Services
                 catch { }
             }
 
-            // Fallback für ältere Configs ohne Multi-Trigger
             foreach (var p in Presets)
             {
                 if (p.Triggers == null) p.Triggers = new ObservableCollection<TriggerCondition>();

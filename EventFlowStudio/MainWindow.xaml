@@ -263,6 +263,7 @@
             </TabItem>
 
             <!-- TAB 2: EINSTELLUNGEN -->
+            <!-- TAB 2: EINSTELLUNGEN -->
             <TabItem>
                 <Border Background="{StaticResource CardBg}" CornerRadius="8" Padding="30">
                     <StackPanel DataContext="{Binding AppSettings}">
@@ -277,6 +278,14 @@
 
                         <TextBlock Text="{Binding DataContext.Strings.SystemIntegrationHeader, RelativeSource={RelativeSource AncestorType=Window}}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource PrimaryAccent}" Margin="0,0,0,10"/>
                         <CheckBox IsChecked="{Binding EnableSystemTray}" Content="{Binding DataContext.Strings.SystemTrayCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" Margin="0,0,0,10"/>
+
+                        <!-- NEUE OPTIONEN: MINIMIERT STARTEN & FENSTER HOTKEY -->
+                        <CheckBox IsChecked="{Binding StartMinimized}" Content="{Binding DataContext.Strings.StartMinimizedCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" Margin="0,0,0,10"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="{Binding DataContext.Strings.ToggleHotkeyLabel, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBox Text="{Binding ToggleHotkeyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="200" Background="#1E293B" Foreground="#38BDF8" FontWeight="Bold" KeyDown="SettingsHotkey_KeyDown" ToolTip="Klicke rein und drücke Hotkey"/>
+                        </StackPanel>
+
                         <CheckBox IsChecked="{Binding AutoStartWindows}" Content="{Binding DataContext.Strings.AutoStartCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" Margin="0,0,0,10"/>
                         <CheckBox IsChecked="{Binding RunAsAdmin}" Content="{Binding DataContext.Strings.AlwaysAdminCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#F59E0B" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
                         <Button Content="{Binding DataContext.Strings.RestartAdminBtn, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding DataContext.RestartAsAdminCommand, RelativeSource={RelativeSource AncestorType=Window}}" Background="#334155" HorizontalAlignment="Left" Margin="0,0,0,30"/>
