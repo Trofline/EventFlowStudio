@@ -51,18 +51,30 @@ namespace EventFlowStudio
 
         private void SetupTrayIcon()
         {
-            _notifyIcon = new System.Windows.Forms.NotifyIcon();
-            _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location);
-            _notifyIcon.Visible = true;
-            _notifyIcon.Text = "EventFlow Studio";
+            try
+            {
+                _notifyIcon = new System.Windows.Forms.NotifyIcon();
 
-            _notifyIcon.DoubleClick += (s, args) => ShowMainWindow();
+                // Der absolut sichere Weg, den Pfad der eigenen .exe in Single-File-Apps auszulesen
+                string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule!.FileName;
+                _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
 
-            var contextMenu = new System.Windows.Forms.ContextMenuStrip();
-            contextMenu.Items.Add("EventFlow öffnen", null, (s, e) => ShowMainWindow());
-            contextMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-            contextMenu.Items.Add("Beenden", null, (s, e) => QuitApplication());
-            _notifyIcon.ContextMenuStrip = contextMenu;
+                _notifyIcon.Visible = true;
+                _notifyIcon.Text = "EventFlow Studio";
+
+                _notifyIcon.DoubleClick += (s, args) => ShowMainWindow();
+
+                var contextMenu = new System.Windows.Forms.ContextMenuStrip();
+                contextMenu.Items.Add("EventFlow öffnen", null, (s, e) => ShowMainWindow());
+                contextMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+                contextMenu.Items.Add("Beenden", null, (s, e) => QuitApplication());
+                _notifyIcon.ContextMenuStrip = contextMenu;
+            }
+            catch (Exception ex)
+            {
+                // Verhindert den Totalabsturz, falls das Icon wider Erwarten nicht geladen werden kann
+                System.Windows.MessageBox.Show("System-Tray Icon konnte nicht geladen werden: " + ex.Message);
+            }
         }
 
         private void ShowMainWindow()

@@ -2,81 +2,157 @@
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
-using System.Net.Http.Json;
-using System.Text.Json.Serialization;
+using System.Net.Http.Headers;
+using System.Reflection;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace EventFlowStudio.Services
 {
     public class GithubUpdater
     {
-        private readonly HttpClient _http;
         private readonly Action<string> _log;
+        private const string AppDataFolder = "EventFlowStudio";
 
-        public GithubUpdater(Action<string> logAction)
+        public GithubUpdater(Action<string> log)
         {
-            _log = logAction;
-            _http = new HttpClient();
-            _http.DefaultRequestHeaders.Add("User-Agent", "EventFlowStudio-AutoUpdater");
+            _log = log;
         }
 
-        public async Task CheckAndUpdateAsync(string repo)
+        // repoName sieht z.B. so aus: "DeinName/EventFlowStudio"
+        public async Task CheckAndUpdateAsync(string repoName)
         {
-            if (string.IsNullOrWhiteSpace(repo) || !repo.Contains("/")) return;
-
             try
             {
-                _log($"Prüfe auf Updates via GitHub ({repo})...");
-                string url = $"https://api.github.com/repos/{repo}/releases/latest";
-                var release = await _http.GetFromJsonAsync<GithubRelease>(url);
+                _log("Suche im Hintergrund nach Updates...");
 
-                if (release != null && release.Assets != null && release.Assets.Length > 0)
+                using var client = new HttpClient();
+                // GitHub API verlangt zwingend einen User-Agent
+                client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("EventFlowStudio", "1.0"));
+
+                var url = $"https://api.github.com/repos/{repoName}/releases/latest";
+                var response = await client.GetAsync(url);
+
+                if (!response.IsSuccessStatusCode) return; // Wenn kein Release da ist, einfach ignorieren
+
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                // Wirft das "v" vom Tag weg (z.B. "v1.0.1" -> "1.0.1")
+                var latestVersionTag = root.GetProperty("tag_name").GetString()?.Replace("v", "");
+
+                // Holt die aktuelle Version deiner eigenen gebauten .exe
+                var currentVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
+
+                if (Version.TryParse(latestVersionTag, out Version latest) &&
+                    Version.TryParse(currentVersion, out Version current))
                 {
-                    // Sehr simple Logik: Wenn ein Release gefunden wird, laden wir die erste Exe runter
-                    // (Für Produktion würdest du hier die aktuelle Version mit release.TagName vergleichen)
-                    string downloadUrl = release.Assets[0].BrowserDownloadUrl;
-                    if (downloadUrl.EndsWith(".exe"))
+                    if (latest > current)
                     {
-                        _log($"Update gefunden: {release.TagName}. Lade herunter...");
-                        byte[] fileBytes = await _http.GetByteArrayAsync(downloadUrl);
+                        _log($"Neue Version gefunden ({latestVersionTag})! Lade im Hintergrund herunter...");
 
-                        string newExePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "EventFlowStudio_Update.exe");
-                        await File.WriteAllBytesAsync(newExePath, fileBytes);
+                        var assets = root.GetProperty("assets");
+                        string downloadUrl = string.Empty;
 
-                        _log("Update heruntergeladen. Starte Updater...");
-
-                        // Startet das Update und schließt die aktuelle Instanz
-                        Process.Start(new ProcessStartInfo
+                        // Sucht in den GitHub Releases nach der .exe Datei
+                        foreach (var asset in assets.EnumerateArray())
                         {
-                            FileName = "cmd.exe",
-                            Arguments = $"/c ping 127.0.0.1 -n 2 > nul & move /y \"{newExePath}\" \"{Process.GetCurrentProcess().MainModule.FileName}\" & start \"\" \"{Process.GetCurrentProcess().MainModule.FileName}\"",
-                            CreateNoWindow = true,
-                            WindowStyle = ProcessWindowStyle.Hidden
-                        });
+                            var name = asset.GetProperty("name").GetString();
+                            if (name != null && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                            {
+                                downloadUrl = asset.GetProperty("browser_download_url").GetString()!;
+                                break;
+                            }
+                        }
 
-                        Environment.Exit(0);
+                        if (!string.IsNullOrEmpty(downloadUrl))
+                        {
+                            await PerformSeamlessUpdate(downloadUrl);
+                        }
                     }
-                }
-                else
-                {
-                    _log("Du bist auf der neuesten Version.");
+                    else
+                    {
+                        _log($"EventFlow Studio ist aktuell (v{currentVersion}).");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _log($"Update fehlgeschlagen: {ex.Message}");
+                _log($"Update-Check fehlgeschlagen: {ex.Message}");
             }
         }
 
-        private class GithubRelease
+        private async Task PerformSeamlessUpdate(string downloadUrl)
         {
-            [JsonPropertyName("tag_name")] public string TagName { get; set; } = string.Empty;
-            [JsonPropertyName("assets")] public GithubAsset[]? Assets { get; set; }
+            try
+            {
+                // Die Pfade zur aktuellen und zur neuen temporären Datei
+                string currentExe = Process.GetCurrentProcess().MainModule!.FileName;
+                string currentDir = Path.GetDirectoryName(currentExe)!;
+                string newExe = Path.Combine(currentDir, "EventFlowStudio_Update.exe");
+
+                // 1. Update herunterladen
+                using var client = new HttpClient();
+                var response = await client.GetAsync(downloadUrl);
+                using var fs = new FileStream(newExe, FileMode.Create, FileAccess.Write, FileShare.None);
+                await response.Content.CopyToAsync(fs);
+                fs.Close();
+
+                // 2. Sicherheits-Backup der Profile erstellen
+                BackupProfiles();
+
+                // 3. Unsichtbares Update-Skript erstellen
+                string batPath = Path.Combine(currentDir, "update_eventflow.bat");
+
+                // Dieses Skript wartet 2 Sekunden, tauscht die Dateien, startet die neue und löscht sich selbst
+                string batContent = $@"
+@echo off
+timeout /t 2 /nobreak >nul
+del ""{currentExe}""
+rename ""{newExe}"" ""{Path.GetFileName(currentExe)}""
+start """" ""{currentExe}""
+del ""%~f0""
+";
+                File.WriteAllText(batPath, batContent);
+
+                _log("Update erfolgreich geladen. Starte blitzschnell neu...");
+
+                // 4. Update-Skript starten (komplett unsichtbar, kein schwarzes CMD-Fenster)
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = batPath,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                });
+
+                // 5. Beende die aktuelle App SOFORT, damit das Skript die Datei überschreiben kann
+                Environment.Exit(0);
+            }
+            catch (Exception ex)
+            {
+                _log($"Fehler beim Update-Prozess: {ex.Message}");
+            }
         }
 
-        private class GithubAsset
+        private void BackupProfiles()
         {
-            [JsonPropertyName("browser_download_url")] public string BrowserDownloadUrl { get; set; } = string.Empty;
+            try
+            {
+                string appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppDataFolder);
+                string configFile = Path.Combine(appData, "presets_config_v4.json");
+
+                // Sichert die Profile als Backup ab
+                string backupFile = Path.Combine(appData, $"presets_backup_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+
+                if (File.Exists(configFile))
+                {
+                    File.Copy(configFile, backupFile, true);
+                    _log("Sicherheits-Backup der Profile wurde angelegt.");
+                }
+            }
+            catch { }
         }
     }
 }
