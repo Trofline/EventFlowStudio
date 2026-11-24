@@ -63,6 +63,32 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Auswahl laufender Prozesse: nur bei Prozess-Triggern -->
+        <Style x:Key="TriggerPickButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="ProcessStarted">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="ProcessStopped">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Auswahl laufender Prozesse: nur bei Start/Beenden-Aktionen -->
+        <Style x:Key="ActionPickButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="StartProcess">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="KillProcess">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -199,6 +225,7 @@
                                                             <ColumnDefinition Width="200"/>
                                                             <ColumnDefinition Width="*"/>
                                                             <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
 
                                                         <ComboBox ItemsSource="{Binding DataContext.TriggerTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" Margin="0,0,8,0" Padding="6"/>
@@ -206,7 +233,12 @@
                                                         <TextBox Grid.Column="1" Text="{Binding TargetName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource TargetNameBoxStyle}" ToolTip="Name (z.B. ac_client)"/>
                                                         <TextBox Grid.Column="1" Text="{Binding TargetName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource HotkeyBoxStyle}" ToolTip="Klicke rein und drücke Hotkey" Background="#1E293B" Foreground="#38BDF8" FontWeight="Bold" KeyDown="HotkeyTextBox_KeyDown"/>
 
-                                                        <Button Grid.Column="2" Content="❌" Background="Red" Margin="8,0,0,0" Command="{Binding DataContext.DeleteTriggerCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                                        <Button Grid.Column="2" Content="🔍 Laufend" Style="{StaticResource TriggerPickButtonStyle}" Background="#334155" Margin="8,0,0,0"
+                                                                ToolTip="{Binding DataContext.Strings.PickRunningTooltip, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                Command="{Binding DataContext.PickProcessForTriggerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                CommandParameter="{Binding}"/>
+
+                                                        <Button Grid.Column="3" Content="❌" Background="Red" Margin="8,0,0,0" Command="{Binding DataContext.DeleteTriggerCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>
@@ -228,6 +260,7 @@
                                                                 <ColumnDefinition Width="*"/>
                                                                 <ColumnDefinition Width="Auto"/>
                                                                 <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
                                                             <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" Margin="0,0,10,0" VerticalAlignment="Center"/>
                                                             <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.ActionTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" Margin="0,0,10,0" Padding="6"/>
@@ -238,7 +271,12 @@
                                                                     Command="{Binding DataContext.BrowseFileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                     CommandParameter="{Binding}" Background="#334155"/>
 
-                                                            <Button Grid.Column="4" Content="❌" Background="Red" Margin="8,0,0,0" Command="{Binding DataContext.DeleteActionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                                            <Button Grid.Column="4" Content="🔍 Laufend" Style="{StaticResource ActionPickButtonStyle}" Background="#334155" Margin="2,0"
+                                                                    ToolTip="{Binding DataContext.Strings.PickRunningTooltip, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    Command="{Binding DataContext.PickProcessForActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding}"/>
+
+                                                            <Button Grid.Column="5" Content="❌" Background="Red" Margin="8,0,0,0" Command="{Binding DataContext.DeleteActionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
                                                         </Grid>
 
                                                         <StackPanel Orientation="Horizontal" Margin="30,10,0,0">

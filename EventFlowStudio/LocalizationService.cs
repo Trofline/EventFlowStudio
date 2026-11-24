@@ -69,6 +69,13 @@ namespace EventFlowStudio.Services
         public string AutoUpdateCheckbox => CurrentLanguage == "Deutsch" ? "Beim Start automatisch nach Updates suchen und installieren" : "Automatically check for and install updates on startup";
         public string SaveSettingsBtn => CurrentLanguage == "Deutsch" ? "💾 Einstellungen Speichern" : "💾 Save Settings";
 
+        public string PickRunningTooltip => CurrentLanguage == "Deutsch" ? "Aus laufenden Apps und Prozessen auswählen" : "Pick from running apps and processes";
+        public string PickProcessTriggerTitle => CurrentLanguage == "Deutsch" ? "Prozess für den Trigger auswählen" : "Pick a process for the trigger";
+        public string PickProcessActionTitle => CurrentLanguage == "Deutsch" ? "Programm für die Aktion auswählen" : "Pick a program for the action";
+        public string PickProcessNoPathWarning => CurrentLanguage == "Deutsch"
+            ? "Der Pfad dieses Prozesses ist ohne Admin-Rechte nicht lesbar. Es wurde nur der Name eingetragen. Zum Starten bitte den Pfad über 📁 auswählen oder EventFlow Studio als Administrator starten."
+            : "This process's path can't be read without admin rights, so only its name was filled in. To start it, pick the file via 📁 or run EventFlow Studio as administrator.";
+
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
