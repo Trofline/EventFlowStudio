@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -28,6 +29,17 @@ namespace EventFlowStudio.Services
 
         public event Action<string>? LogMessage;
         public event Action? ToggleMainWindow; // NEU: Event für das Fenster
+        public event Action<string, string>? NotificationRequested; // Titel, Nachricht -> Tray-Benachrichtigung
+
+        private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+
+        // Windows-Standard-GUIDs der eingebauten Energiesparpläne
+        private static readonly Dictionary<PowerPlanType, string> PowerPlanGuids = new()
+        {
+            { PowerPlanType.Balanced, "381b4222-f694-41f0-9685-ff5bb260df2e" },
+            { PowerPlanType.HighPerformance, "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" },
+            { PowerPlanType.PowerSaver, "a1841308-3541-4fab-bc81-f71556f20b4a" },
+        };
 
         public ExecutionEngine()
         {
@@ -139,6 +151,9 @@ namespace EventFlowStudio.Services
                         if (proc != null) { action.LaunchedProcessId = proc.Id; Log($"Gestartet: {Path.GetFileName(action.TargetPath)} [PID: {proc.Id}]"); }
                     }
                     else if (action.Type == ActionType.KillProcess) KillProcessByNameOrPath(action.TargetPath);
+                    else if (action.Type == ActionType.ChangePowerPlan) await ChangePowerPlanAsync(action.PowerPlan);
+                    else if (action.Type == ActionType.SendWebhook) await SendWebhookAsync(action.WebhookUrl, preset);
+                    else if (action.Type == ActionType.SystemNotification) ShowNotification(preset, action.NotificationMessage);
                 }
                 catch (Exception ex) { Log($"Fehler bei Aktion: {ex.Message}"); }
             }
@@ -146,7 +161,9 @@ namespace EventFlowStudio.Services
 
         private async void HandleProcessExitCleanup(Preset preset)
         {
-            foreach (var action in preset.Actions.Where(a => a.IsEnabled && a.TerminateOnTriggerProcessExit))
+            // Clean-up betrifft nur Prozess-Aktionen (Energieplan/Webhook/Benachrichtigung haben keinen Prozess)
+            foreach (var action in preset.Actions.Where(a => a.IsEnabled && a.TerminateOnTriggerProcessExit &&
+                                                             (a.Type == ActionType.StartProcess || a.Type == ActionType.KillProcess)))
             {
                 if (action.ExitDelaySeconds > 0)
                 {
@@ -167,6 +184,70 @@ namespace EventFlowStudio.Services
                 }
                 if (!killedByPid && !string.IsNullOrWhiteSpace(action.TargetPath)) KillProcessByNameOrPath(action.TargetPath);
             }
+        }
+
+        private async Task ChangePowerPlanAsync(PowerPlanType plan)
+        {
+            if (!PowerPlanGuids.TryGetValue(plan, out var guid)) { Log($"Unbekannter Energieplan: {plan}"); return; }
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "powercfg",
+                Arguments = $"/setactive {guid}",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            using var proc = Process.Start(psi);
+            if (proc == null) { Log("Energieplan: powercfg konnte nicht gestartet werden."); return; }
+
+            var stdOutTask = proc.StandardOutput.ReadToEndAsync();
+            var stdErrTask = proc.StandardError.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+            string output = ((await stdErrTask) + " " + (await stdOutTask)).Trim();
+
+            if (proc.ExitCode == 0) Log($"Energieplan aktiviert: {plan}");
+            else Log($"Energieplan {plan} konnte nicht aktiviert werden (powercfg Code {proc.ExitCode}). " +
+                     $"Auf manchen Geräten ist dieser Plan nicht vorhanden. {output}".Trim());
+        }
+
+        private async Task SendWebhookAsync(string url, Preset preset)
+        {
+            if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                Log($"Webhook übersprungen: ungültige URL \"{url}\"");
+                return;
+            }
+
+            var payload = new
+            {
+                source = "EventFlowStudio",
+                preset = preset.Name,
+                presetId = preset.Id,
+                machine = Environment.MachineName,
+                timestamp = DateTimeOffset.Now.ToString("o")
+            };
+
+            using var content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+            try
+            {
+                using var response = await _httpClient.PostAsync(uri, content);
+                if (response.IsSuccessStatusCode) Log($"Webhook gesendet: {uri.Host} [{(int)response.StatusCode}]");
+                else Log($"Webhook fehlgeschlagen: {uri.Host} antwortete mit {(int)response.StatusCode} {response.ReasonPhrase}");
+            }
+            catch (TaskCanceledException) { Log($"Webhook Timeout: {uri.Host} hat nicht innerhalb von 10 Sek. geantwortet."); }
+            catch (HttpRequestException ex) { Log($"Webhook fehlgeschlagen: {uri.Host} ({ex.Message})"); }
+        }
+
+        private void ShowNotification(Preset preset, string message)
+        {
+            string text = string.IsNullOrWhiteSpace(message) ? "Aktion ausgeführt." : message;
+            if (NotificationRequested == null) { Log("Benachrichtigung nicht möglich: kein Tray-Icon verfügbar."); return; }
+
+            NotificationRequested.Invoke(preset.Name, text);
+            Log($"Benachrichtigung angezeigt: {text}");
         }
 
         private void KillProcessByNameOrPath(string targetPath)

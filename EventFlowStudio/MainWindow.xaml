@@ -63,6 +63,79 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Aktions-Eingaben je nach Aktionstyp ein-/ausblenden -->
+        <Style x:Key="ProcessActionTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Visibility" Value="Visible"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="ChangePowerPlan">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="SendWebhook">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="SystemNotification">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ProcessActionButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Visibility" Value="Visible"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="ChangePowerPlan">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="SendWebhook">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="SystemNotification">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ProcessActionPanelStyle" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Visible"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="ChangePowerPlan">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="SendWebhook">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="SystemNotification">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PowerPlanComboStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="ChangePowerPlan">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="WebhookTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="SendWebhook">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="NotificationTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="SystemNotification">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -232,16 +305,19 @@
                                                             <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" Margin="0,0,10,0" VerticalAlignment="Center"/>
                                                             <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.ActionTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" Margin="0,0,10,0" Padding="6"/>
 
-                                                            <TextBox Grid.Column="2" Text="{Binding TargetPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                                                            <TextBox Grid.Column="2" Text="{Binding TargetPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0" Style="{StaticResource ProcessActionTextBoxStyle}"/>
+                                                            <ComboBox Grid.Column="2" ItemsSource="{Binding DataContext.PowerPlanTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding PowerPlan}" Margin="0,0,5,0" Padding="6" Style="{StaticResource PowerPlanComboStyle}"/>
+                                                            <TextBox Grid.Column="2" Text="{Binding WebhookUrl, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0" ToolTip="Webhook-URL (POST, JSON)" Style="{StaticResource WebhookTextBoxStyle}"/>
+                                                            <TextBox Grid.Column="2" Text="{Binding NotificationMessage, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0" ToolTip="Text der Benachrichtigung" Style="{StaticResource NotificationTextBoxStyle}"/>
 
                                                             <Button Grid.Column="3" Content="📁 ..." Margin="2,0" ToolTip="Datei suchen"
                                                                     Command="{Binding DataContext.BrowseFileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                    CommandParameter="{Binding}" Background="#334155"/>
+                                                                    CommandParameter="{Binding}" Background="#334155" Style="{StaticResource ProcessActionButtonStyle}"/>
 
                                                             <Button Grid.Column="4" Content="❌" Background="Red" Margin="8,0,0,0" Command="{Binding DataContext.DeleteActionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
                                                         </Grid>
 
-                                                        <StackPanel Orientation="Horizontal" Margin="30,10,0,0">
+                                                        <StackPanel Orientation="Horizontal" Margin="30,10,0,0" Style="{StaticResource ProcessActionPanelStyle}">
                                                             <CheckBox IsChecked="{Binding RunAsAdmin}" Content="{Binding DataContext.Strings.RunAsAdminCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#F59E0B" FontWeight="Bold" Margin="0,0,15,0"/>
                                                             <CheckBox IsChecked="{Binding TerminateOnTriggerProcessExit}" Content="{Binding DataContext.Strings.TerminateCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#CBD5E1" Margin="0,0,15,0"/>
 

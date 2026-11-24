@@ -14,6 +14,7 @@ namespace EventFlowStudio
         {
             InitializeComponent();
             SetupTrayIcon();
+            if (DataContext is MainViewModel notifyVm) notifyVm.NotificationRequested += ShowTrayNotification;
 
             this.Loaded += MainWindow_Loaded;
             this.Closing += MainWindow_Closing;
@@ -47,6 +48,15 @@ namespace EventFlowStudio
                     ShowMainWindow();
                 }
             });
+        }
+
+        private void ShowTrayNotification(string title, string message)
+        {
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_notifyIcon == null) return;
+                _notifyIcon.ShowBalloonTip(5000, title, message, System.Windows.Forms.ToolTipIcon.Info);
+            }));
         }
 
         private void SetupTrayIcon()
