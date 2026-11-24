@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -19,7 +20,7 @@ namespace EventFlowStudio.Services
             _log = log;
         }
 
-        // repoName sieht z.B. so aus: "DeinName/EventFlowStudio"
+        // repoName sieht z.B. so aus: "Trofline/EventFlowStudio"
         public async Task CheckAndUpdateAsync(string repoName)
         {
             try
@@ -39,8 +40,8 @@ namespace EventFlowStudio.Services
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                // Wirft das "v" vom Tag weg (z.B. "v1.0.1" -> "1.0.1")
-                var latestVersionTag = root.GetProperty("tag_name").GetString()?.Replace("v", "");
+                // Entfernt nur ein führendes "v" vom Tag (z.B. "v1.0.1" -> "1.0.1")
+                var latestVersionTag = NormalizeTag(root.GetProperty("tag_name").GetString());
 
                 // Holt die aktuelle Version deiner eigenen gebauten .exe
                 var currentVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
@@ -54,6 +55,8 @@ namespace EventFlowStudio.Services
 
                         var assets = root.GetProperty("assets");
                         string downloadUrl = string.Empty;
+                        long expectedSize = -1;
+                        string? expectedSha256 = null;
 
                         // Sucht in den GitHub Releases nach der .exe Datei
                         foreach (var asset in assets.EnumerateArray())
@@ -61,14 +64,31 @@ namespace EventFlowStudio.Services
                             var name = asset.GetProperty("name").GetString();
                             if (name != null && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                             {
-                                downloadUrl = asset.GetProperty("browser_download_url").GetString()!;
+                                downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? string.Empty;
+                                if (asset.TryGetProperty("size", out var sizeProp) && sizeProp.ValueKind == JsonValueKind.Number)
+                                    expectedSize = sizeProp.GetInt64();
+                                // GitHub liefert (bei neueren Releases) einen Digest wie "sha256:abc..."
+                                if (asset.TryGetProperty("digest", out var digestProp) && digestProp.ValueKind == JsonValueKind.String)
+                                {
+                                    var digest = digestProp.GetString();
+                                    if (digest != null && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+                                        expectedSha256 = digest.Substring("sha256:".Length);
+                                }
                                 break;
                             }
                         }
 
-                        if (!string.IsNullOrEmpty(downloadUrl))
+                        if (string.IsNullOrEmpty(downloadUrl))
                         {
-                            await PerformSeamlessUpdate(downloadUrl);
+                            _log("Kein .exe-Asset im neuesten Release gefunden. Update übersprungen.");
+                        }
+                        else if (!IsTrustedDownloadUrl(downloadUrl))
+                        {
+                            _log("Download-URL ist nicht vertrauenswürdig. Update abgebrochen.");
+                        }
+                        else
+                        {
+                            await PerformSeamlessUpdate(downloadUrl, expectedSize, expectedSha256);
                         }
                     }
                     else
@@ -83,21 +103,76 @@ namespace EventFlowStudio.Services
             }
         }
 
-        private async Task PerformSeamlessUpdate(string downloadUrl)
+        // Entfernt genau ein führendes "v"/"V", lässt den Rest des Tags unverändert
+        internal static string? NormalizeTag(string? tag)
         {
+            if (string.IsNullOrWhiteSpace(tag)) return null;
+            tag = tag.Trim();
+            return tag.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? tag.Substring(1) : tag;
+        }
+
+        // Nur HTTPS-Downloads von GitHub zulassen
+        private static bool IsTrustedDownloadUrl(string url)
+        {
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                && uri.Scheme == Uri.UriSchemeHttps
+                && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Prüft die heruntergeladene Datei: Größe, SHA-256 (falls bekannt) und Windows-EXE-Header ("MZ")
+        private static string? ValidateDownload(string path, long expectedSize, string? expectedSha256)
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length == 0) return "Datei ist leer.";
+            if (expectedSize > 0 && info.Length != expectedSize)
+                return $"Dateigröße stimmt nicht ({info.Length} statt {expectedSize} Bytes).";
+
+            using var fs = File.OpenRead(path);
+            int b1 = fs.ReadByte(), b2 = fs.ReadByte();
+            if (b1 != 'M' || b2 != 'Z') return "Datei ist keine gültige Windows-Anwendung.";
+
+            if (!string.IsNullOrEmpty(expectedSha256))
+            {
+                fs.Position = 0;
+                var actual = Convert.ToHexString(SHA256.HashData(fs));
+                if (!actual.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase))
+                    return "SHA-256-Prüfsumme stimmt nicht.";
+            }
+            return null;
+        }
+
+        private async Task PerformSeamlessUpdate(string downloadUrl, long expectedSize, string? expectedSha256)
+        {
+            string? newExe = null;
             try
             {
                 // Die Pfade zur aktuellen und zur neuen temporären Datei
                 string currentExe = Process.GetCurrentProcess().MainModule!.FileName;
                 string currentDir = Path.GetDirectoryName(currentExe)!;
-                string newExe = Path.Combine(currentDir, "EventFlowStudio_Update.exe");
+                newExe = Path.Combine(currentDir, "EventFlowStudio_Update.exe");
 
                 // 1. Update herunterladen
-                using var client = new HttpClient();
-                var response = await client.GetAsync(downloadUrl);
-                using var fs = new FileStream(newExe, FileMode.Create, FileAccess.Write, FileShare.None);
-                await response.Content.CopyToAsync(fs);
-                fs.Close();
+                using (var client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("EventFlowStudio", "1.0"));
+                    using var response = await client.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _log($"Download fehlgeschlagen (HTTP {(int)response.StatusCode}). Update abgebrochen.");
+                        return;
+                    }
+                    using var fs = new FileStream(newExe, FileMode.Create, FileAccess.Write, FileShare.None);
+                    await response.Content.CopyToAsync(fs);
+                }
+
+                // 1b. Download prüfen, bevor irgendetwas ersetzt wird
+                var validationError = ValidateDownload(newExe, expectedSize, expectedSha256);
+                if (validationError != null)
+                {
+                    _log($"Update verworfen: {validationError}");
+                    TryDelete(newExe);
+                    return;
+                }
 
                 // 2. Sicherheits-Backup der Profile erstellen
                 BackupProfiles();
@@ -133,7 +208,13 @@ del ""%~f0""
             catch (Exception ex)
             {
                 _log($"Fehler beim Update-Prozess: {ex.Message}");
+                if (newExe != null) TryDelete(newExe);
             }
+        }
+
+        private static void TryDelete(string path)
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch { }
         }
 
         private void BackupProfiles()

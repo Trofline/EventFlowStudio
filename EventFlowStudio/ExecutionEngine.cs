@@ -14,7 +14,7 @@ namespace EventFlowStudio.Services
 {
     public class ExecutionEngine
     {
-        private const string GithubRepository = "DeinName/EventFlowStudio";
+        private const string GithubRepository = "Trofline/EventFlowStudio";
         private readonly string _appDataFolder;
         private readonly string _configFile;
         private readonly string _settingsFile;
