@@ -2,10 +2,15 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:EventFlowStudio.ViewModels"
-        Title="{Binding Strings.AppTitle}" 
-        Height="850" Width="1300"
-        Background="#0F172A" Foreground="#F8FAFC"
+        Title="{Binding Strings.AppTitle}"
+        Height="850" Width="1300" MinHeight="600" MinWidth="1000"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
+        FontFamily="{StaticResource UiFont}" FontSize="13"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True"
         WindowStartupLocation="CenterScreen">
+
+    <!-- Farben und Control-Styles liegen zentral in Themes/Theme.xaml -->
 
     <Window.DataContext>
         <vm:MainViewModel/>
@@ -15,12 +20,7 @@
         <vm:InverseBooleanToVisibilityConverter x:Key="InvBoolToVis"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
-        <SolidColorBrush x:Key="CardBg" Color="#1E293B"/>
-        <SolidColorBrush x:Key="InputBg" Color="#0F172A"/>
-        <SolidColorBrush x:Key="PrimaryAccent" Color="#6366F1"/>
-        <SolidColorBrush x:Key="SuccessAccent" Color="#10B981"/>
-
-        <Style x:Key="HotkeyBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Style x:Key="HotkeyBoxStyle" TargetType="TextBox" BasedOn="{StaticResource HotkeyInput}">
             <Setter Property="Visibility" Value="Collapsed"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Type}" Value="GlobalHotkey">
@@ -38,78 +38,103 @@
             </Style.Triggers>
         </Style>
 
-        <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource InputBg}"/>
-            <Setter Property="Foreground" Value="#F8FAFC"/>
-            <Setter Property="BorderBrush" Value="#334155"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="8,6"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <!-- Großes, randloses Namensfeld im Editor-Kopf -->
+        <Style x:Key="TitleInput" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="FontFamily" Value="{StaticResource DisplayFont}"/>
+            <Setter Property="FontSize" Value="22"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Margin" Value="-9,0,0,0"/>
         </Style>
 
-        <Style TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource PrimaryAccent}"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="12,6"/>
+        <!-- Log-Ausgabe in der Seitenleiste -->
+        <Style x:Key="LogBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="btnBorder" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+            <Setter Property="Foreground" Value="#7DDBB4"/>
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
         </Style>
     </Window.Resources>
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="220"/>
+            <ColumnDefinition Width="248"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- SEITENLEISTE -->
-        <Border Grid.Column="0" Background="#0B1120" Padding="15">
-            <Grid>
+        <!-- ================= SEITENLEISTE ================= -->
+        <Border Grid.Column="0" Background="{StaticResource SidebarBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <Grid Margin="16,20,16,16">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Text="⚡ EventFlow" FontSize="24" FontWeight="Black" Foreground="{StaticResource PrimaryAccent}" Margin="0,0,0,20" HorizontalAlignment="Center"/>
-
-                <StackPanel Grid.Row="1">
-                    <Button Content="{Binding Strings.TabProfiles}" Command="{Binding SwitchTabCommand}" CommandParameter="0" 
-                            Background="{StaticResource CardBg}" Height="40" Margin="0,0,0,8" FontSize="13"/>
-                    <Button Content="{Binding Strings.TabSettings}" Command="{Binding SwitchTabCommand}" CommandParameter="1" 
-                            Background="{StaticResource CardBg}" Height="40" Margin="0,0,0,15" FontSize="13"/>
+                <!-- Logo -->
+                <StackPanel Orientation="Horizontal" Margin="6,0,0,28">
+                    <Border Width="34" Height="34" CornerRadius="9">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#9B8CFF" Offset="0"/>
+                                <GradientStop Color="#5B4BE0" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <TextBlock Text="&#xE945;" Style="{StaticResource Icon}" FontSize="16" Foreground="White"/>
+                    </Border>
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="EventFlow" FontFamily="{StaticResource DisplayFont}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                        <TextBlock Text="Studio" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,-2,0,0"/>
+                    </StackPanel>
                 </StackPanel>
 
-                <Grid Grid.Row="2">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock Text="{Binding Strings.LiveLogsHeader}" FontSize="11" FontWeight="Bold" Foreground="#94A3B8" Margin="0,0,0,5"/>
-                    <TextBox Grid.Row="1" Text="{Binding LogOutput}" IsReadOnly="True" VerticalScrollBarVisibility="Auto" 
-                             FontFamily="Consolas" Background="#020617" Foreground="#34D399" BorderThickness="0" TextWrapping="Wrap"/>
-                </Grid>
+                <!-- Navigation -->
+                <StackPanel Grid.Row="1">
+                    <RadioButton Style="{StaticResource NavButton}" GroupName="Nav" IsChecked="True"
+                                 Content="{Binding Strings.TabProfiles}" Command="{Binding SwitchTabCommand}" CommandParameter="0"/>
+                    <RadioButton Style="{StaticResource NavButton}" GroupName="Nav"
+                                 Content="{Binding Strings.TabSettings}" Command="{Binding SwitchTabCommand}" CommandParameter="1"/>
+                </StackPanel>
+
+                <!-- Live-Logs -->
+                <Border Grid.Row="2" Style="{StaticResource InnerCard}" Background="{StaticResource BgBrush}" Margin="0,24,0,0" Padding="12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Ellipse Width="7" Height="7" Fill="{StaticResource SuccessBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="{Binding Strings.LiveLogsHeader}" Style="{StaticResource SectionLabel}"/>
+                        </StackPanel>
+                        <TextBox Grid.Row="1" Style="{StaticResource LogBox}" Text="{Binding LogOutput, Mode=OneWay}"/>
+                    </Grid>
+                </Border>
             </Grid>
         </Border>
 
-        <!-- HAUPTBEREICH -->
-        <TabControl Grid.Column="1" SelectedIndex="{Binding SelectedTabIndex}" Background="Transparent" BorderThickness="0" Padding="20">
+        <!-- ================= HAUPTBEREICH ================= -->
+        <TabControl Grid.Column="1" SelectedIndex="{Binding SelectedTabIndex}" Padding="24">
+            <TabControl.Template>
+                <ControlTemplate TargetType="TabControl">
+                    <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" Margin="{TemplateBinding Padding}"/>
+                </ControlTemplate>
+            </TabControl.Template>
             <TabControl.ItemContainerStyle>
                 <Style TargetType="TabItem">
                     <Setter Property="Visibility" Value="Collapsed"/>
                 </Style>
             </TabControl.ItemContainerStyle>
 
-            <!-- TAB 1: PROFILE -->
+            <!-- ============ TAB 1: PROFILE ============ -->
             <TabItem>
                 <Grid>
                     <Grid.RowDefinitions>
@@ -117,184 +142,270 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <Border Grid.Row="0" Background="{StaticResource CardBg}" CornerRadius="8" Padding="15,12" Margin="0,0,0,20"
+                    <!-- Hinweis-Banner -->
+                    <Border Grid.Row="0" CornerRadius="{StaticResource RadiusLg}" Padding="16,12" Margin="0,0,0,20"
+                            Background="{StaticResource AccentSoftBrush}" BorderBrush="#447C6CFF" BorderThickness="1"
                             Visibility="{Binding AppSettings.HideInstructions, Converter={StaticResource InvBoolToVis}}">
-                        <WrapPanel VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Strings.BannerTitle}" FontWeight="Bold" Foreground="White" Margin="0,0,6,0"/>
-                            <TextBlock Text="{Binding Strings.BannerText}" Foreground="#94A3B8"/>
-                        </WrapPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="&#xE946;" Style="{StaticResource Icon}" FontSize="16" Foreground="{StaticResource AccentHoverBrush}"
+                                       VerticalAlignment="Top" Margin="0,1,12,0"/>
+                            <TextBlock Grid.Column="1" TextWrapping="Wrap" LineHeight="19">
+                                <Run Text="{Binding Strings.BannerTitle, Mode=OneWay}" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}"/>
+                                <Run Text="{Binding Strings.BannerText, Mode=OneWay}" Foreground="{StaticResource TextMutedBrush}"/>
+                            </TextBlock>
+                        </Grid>
                     </Border>
 
                     <Grid Grid.Row="1">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="280"/>
+                            <ColumnDefinition Width="290"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
-                        <!-- Profil Liste -->
-                        <Border Grid.Column="0" Background="{StaticResource CardBg}" CornerRadius="8" Padding="12" Margin="0,0,15,0">
+                        <!-- ===== Profil-Liste ===== -->
+                        <Border Grid.Column="0" Style="{StaticResource Card}" Padding="12" Margin="0,0,20,0">
                             <Grid>
                                 <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
                                     <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
-                                <ListBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" Background="Transparent" BorderThickness="0">
+
+                                <Grid Margin="8,6,4,12">
+                                    <TextBlock Text="{Binding Strings.TabProfiles}" Style="{StaticResource CardTitle}"/>
+                                    <Border Style="{StaticResource Pill}" Background="{StaticResource Surface3Brush}" HorizontalAlignment="Right">
+                                        <TextBlock Text="{Binding Presets.Count}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}"/>
+                                    </Border>
+                                </Grid>
+
+                                <ListBox Grid.Row="1" ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Background="#0F172A" CornerRadius="6" Padding="10" Margin="0,4" Width="230">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <CheckBox IsChecked="{Binding IsActive}" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="Bold" Foreground="White"/>
-                                                </Grid>
-                                            </Border>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <CheckBox IsChecked="{Binding IsActive}" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" TextTrimming="CharacterEllipsis"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                                        <TextBlock Text="&#xE945;" Style="{StaticResource Icon}" FontSize="10" Foreground="{StaticResource TextFaintBrush}" Margin="0,0,4,0"/>
+                                                        <TextBlock Text="{Binding Triggers.Count}" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,12,0"/>
+                                                        <TextBlock Text="&#xE768;" Style="{StaticResource Icon}" FontSize="10" Foreground="{StaticResource TextFaintBrush}" Margin="0,0,4,0"/>
+                                                        <TextBlock Text="{Binding Actions.Count}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Grid>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
-                                <Button Grid.Row="1" Content="{Binding Strings.NewProfileBtn}" Command="{Binding AddPresetCommand}" Margin="0,10,0,5"/>
-                                <Grid Grid.Row="2" Margin="0,5,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Button Grid.Column="0" Content="{Binding Strings.ImportBtn}" Command="{Binding ImportCommand}" Background="#334155" Margin="0,0,4,0"/>
-                                    <Button Grid.Column="1" Content="{Binding Strings.ExportBtn}" Command="{Binding ExportCommand}" Background="#334155" Margin="4,0,0,0"/>
-                                </Grid>
+
+                                <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                                    <Button Content="{Binding Strings.NewProfileBtn}" Command="{Binding AddPresetCommand}"/>
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0" Style="{StaticResource SecondaryButton}" Content="{Binding Strings.ImportBtn}" Command="{Binding ImportCommand}" Margin="0,0,4,0"/>
+                                        <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Content="{Binding Strings.ExportBtn}" Command="{Binding ExportCommand}" Margin="4,0,0,0"/>
+                                    </Grid>
+                                </StackPanel>
                             </Grid>
                         </Border>
 
-                        <!-- Detail Editor -->
-                        <Border Grid.Column="1" Background="{StaticResource CardBg}" CornerRadius="8" Padding="20">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <StackPanel DataContext="{Binding SelectedPreset}">
+                        <!-- ===== Profil-Editor ===== -->
+                        <Border Grid.Column="1" Style="{StaticResource Card}" Padding="0">
+                            <Grid DataContext="{Binding SelectedPreset}">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
 
-                                    <Grid Margin="0,0,0,20">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding DataContext.Strings.ProfileEditorHeader, RelativeSource={RelativeSource AncestorType=Window}}" FontSize="18" FontWeight="Black" Foreground="{StaticResource PrimaryAccent}"/>
-                                            <TextBlock Text="{Binding DataContext.Strings.UnsavedText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#EF4444" FontSize="14" FontWeight="Bold" Margin="10,2,0,0"
-                                                       Visibility="{Binding DataContext.IsDirty, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
+                                <!-- Kopfzeile: Name, Status, Aktionen -->
+                                <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,18,20,18">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                                <TextBlock Text="{Binding DataContext.Strings.ProfileEditorHeader, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource SectionLabel}"/>
+                                                <Border Style="{StaticResource Pill}" Background="{StaticResource WarningSoftBrush}" Margin="10,0,0,0"
+                                                        Visibility="{Binding DataContext.IsDirty, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="{Binding DataContext.Strings.UnsavedText, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource WarningBrush}"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBox Style="{StaticResource TitleInput}" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
                                         </StackPanel>
 
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                            <Button Content="{Binding DataContext.Strings.TriggerBtn, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding DataContext.TestRunCommand, RelativeSource={RelativeSource AncestorType=Window}}" Background="{StaticResource SuccessAccent}" Margin="0,0,10,0"/>
-                                            <Button Content="{Binding DataContext.Strings.SaveBtn, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding DataContext.SaveCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button Style="{StaticResource SuccessButton}" Margin="0,0,10,0"
+                                                    Content="{Binding DataContext.Strings.TriggerBtn, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    Command="{Binding DataContext.TestRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                            <Button Content="{Binding DataContext.Strings.SaveBtn, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    Command="{Binding DataContext.SaveCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
                                         </StackPanel>
                                     </Grid>
+                                </Border>
 
-                                    <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" FontSize="16" FontWeight="Bold" Background="#0F172A" Padding="10" Margin="0,0,0,20"/>
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="24,20,24,24">
 
-                                    <!-- MEHRERE TRIGGER LISTE -->
-                                    <TextBlock Text="{Binding DataContext.Strings.TriggersHeader, RelativeSource={RelativeSource AncestorType=Window}}" FontWeight="Bold" Foreground="#94A3B8" Margin="0,0,0,5"/>
+                                        <!-- ===== 1. AUSLÖSER ===== -->
+                                        <Grid Margin="0,0,0,10">
+                                            <TextBlock Text="{Binding DataContext.Strings.TriggersHeader, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource SectionLabel}"/>
+                                            <Button Style="{StaticResource GhostButton}" HorizontalAlignment="Right" Margin="0,0,-10,0"
+                                                    Content="{Binding DataContext.Strings.AddTriggerBtn, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    Command="{Binding DataContext.AddTriggerCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                        </Grid>
 
-                                    <ItemsControl ItemsSource="{Binding Triggers}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Background="#0F172A" Margin="0,0,0,8" Padding="8" CornerRadius="6">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="200"/>
-                                                            <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                        </Grid.ColumnDefinitions>
-
-                                                        <ComboBox ItemsSource="{Binding DataContext.TriggerTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" Margin="0,0,8,0" Padding="6"/>
-
-                                                        <TextBox Grid.Column="1" Text="{Binding TargetName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource TargetNameBoxStyle}" ToolTip="Name (z.B. ac_client)"/>
-                                                        <TextBox Grid.Column="1" Text="{Binding TargetName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource HotkeyBoxStyle}" ToolTip="Klicke rein und drücke Hotkey" Background="#1E293B" Foreground="#38BDF8" FontWeight="Bold" KeyDown="HotkeyTextBox_KeyDown"/>
-
-                                                        <Button Grid.Column="2" Content="❌" Background="Red" Margin="8,0,0,0" Command="{Binding DataContext.DeleteTriggerCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                    <Button Content="{Binding DataContext.Strings.AddTriggerBtn, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding DataContext.AddTriggerCommand, RelativeSource={RelativeSource AncestorType=Window}}" Background="#334155" HorizontalAlignment="Left" Margin="0,0,0,20"/>
-
-                                    <!-- AKTIONEN -->
-                                    <TextBlock Text="{Binding DataContext.Strings.ActionsHeader, RelativeSource={RelativeSource AncestorType=Window}}" FontWeight="Bold" Foreground="#94A3B8" Margin="0,0,0,5"/>
-                                    <ItemsControl ItemsSource="{Binding Actions}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Background="#0F172A" CornerRadius="8" Padding="15" Margin="0,5">
-                                                    <StackPanel>
+                                        <ItemsControl ItemsSource="{Binding Triggers}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Style="{StaticResource InnerCard}" Padding="8" Margin="0,0,0,8">
                                                         <Grid>
                                                             <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="Auto"/>
-                                                                <ColumnDefinition Width="150"/>
+                                                                <ColumnDefinition Width="210"/>
                                                                 <ColumnDefinition Width="*"/>
                                                                 <ColumnDefinition Width="Auto"/>
-                                                                <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
-                                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                                            <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.ActionTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" Margin="0,0,10,0" Padding="6"/>
 
-                                                            <TextBox Grid.Column="2" Text="{Binding TargetPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                                                            <ComboBox ItemsSource="{Binding DataContext.TriggerTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" Margin="0,0,8,0"/>
 
-                                                            <Button Grid.Column="3" Content="📁 ..." Margin="2,0" ToolTip="Datei suchen"
-                                                                    Command="{Binding DataContext.BrowseFileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                    CommandParameter="{Binding}" Background="#334155"/>
+                                                            <TextBox Grid.Column="1" Text="{Binding TargetName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource TargetNameBoxStyle}" ToolTip="Name (z.B. ac_client)"/>
+                                                            <TextBox Grid.Column="1" Text="{Binding TargetName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource HotkeyBoxStyle}" ToolTip="Klicke rein und drücke Hotkey" KeyDown="HotkeyTextBox_KeyDown"/>
 
-                                                            <Button Grid.Column="4" Content="❌" Background="Red" Margin="8,0,0,0" Command="{Binding DataContext.DeleteActionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                                            <Button Grid.Column="2" Style="{StaticResource DangerIconButton}" Content="&#xE74D;" Margin="6,0,0,0"
+                                                                    Command="{Binding DataContext.DeleteTriggerCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
                                                         </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
 
-                                                        <StackPanel Orientation="Horizontal" Margin="30,10,0,0">
-                                                            <CheckBox IsChecked="{Binding RunAsAdmin}" Content="{Binding DataContext.Strings.RunAsAdminCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#F59E0B" FontWeight="Bold" Margin="0,0,15,0"/>
-                                                            <CheckBox IsChecked="{Binding TerminateOnTriggerProcessExit}" Content="{Binding DataContext.Strings.TerminateCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#CBD5E1" Margin="0,0,15,0"/>
+                                        <Border Style="{StaticResource Divider}" Margin="0,16,0,20"/>
 
-                                                            <!-- NEU: Exit-Delay Eingabe -->
-                                                            <TextBlock Text="{Binding DataContext.Strings.ExitDelayLabel, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                                            <TextBox Text="{Binding ExitDelaySeconds}" Width="50"/>
+                                        <!-- ===== 2. AKTIONEN ===== -->
+                                        <Grid Margin="0,0,0,10">
+                                            <TextBlock Text="{Binding DataContext.Strings.ActionsHeader, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource SectionLabel}"/>
+                                            <Button Style="{StaticResource GhostButton}" HorizontalAlignment="Right" Margin="0,0,-10,0"
+                                                    Content="{Binding DataContext.Strings.AddActionBtn, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    Command="{Binding DataContext.AddActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                        </Grid>
+
+                                        <ItemsControl ItemsSource="{Binding Actions}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Style="{StaticResource InnerCard}" Padding="14,12" Margin="0,0,0,10">
+                                                        <StackPanel>
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="170"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" Style="{StaticResource ToggleSwitch}" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                                                <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.ActionTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" Margin="0,0,8,0"/>
+
+                                                                <TextBox Grid.Column="2" Text="{Binding TargetPath, UpdateSourceTrigger=PropertyChanged}"/>
+
+                                                                <Button Grid.Column="3" Style="{StaticResource IconButton}" Content="&#xE838;" Margin="6,0,0,0" ToolTip="Datei suchen"
+                                                                        Command="{Binding DataContext.BrowseFileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding}"/>
+
+                                                                <Button Grid.Column="4" Style="{StaticResource DangerIconButton}" Content="&#xE74D;" Margin="2,0,0,0"
+                                                                        Command="{Binding DataContext.DeleteActionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                                            </Grid>
+
+                                                            <WrapPanel Margin="52,12,0,0">
+                                                                <CheckBox IsChecked="{Binding RunAsAdmin}" Margin="0,4,20,4"
+                                                                          Content="{Binding DataContext.Strings.RunAsAdminCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource WarningBrush}"/>
+                                                                <CheckBox IsChecked="{Binding TerminateOnTriggerProcessExit}" Margin="0,4,20,4"
+                                                                          Content="{Binding DataContext.Strings.TerminateCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource TextMutedBrush}"/>
+                                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                                                                    <TextBlock Text="{Binding DataContext.Strings.ExitDelayLabel, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                    <TextBox Text="{Binding ExitDelaySeconds}" Width="64" MinHeight="30" Padding="8,4" HorizontalContentAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </WrapPanel>
                                                         </StackPanel>
-                                                    </StackPanel>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                    <Button Content="{Binding DataContext.Strings.AddActionBtn, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding DataContext.AddActionCommand, RelativeSource={RelativeSource AncestorType=Window}}" Background="#334155" HorizontalAlignment="Left" Margin="0,10,0,0"/>
-                                </StackPanel>
-                            </ScrollViewer>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Grid>
                         </Border>
                     </Grid>
                 </Grid>
             </TabItem>
 
-            <!-- TAB 2: EINSTELLUNGEN -->
-            <!-- TAB 2: EINSTELLUNGEN -->
+            <!-- ============ TAB 2: EINSTELLUNGEN ============ -->
             <TabItem>
-                <Border Background="{StaticResource CardBg}" CornerRadius="8" Padding="30">
-                    <StackPanel DataContext="{Binding AppSettings}">
-                        <TextBlock Text="{Binding DataContext.Strings.SettingsHeader, RelativeSource={RelativeSource AncestorType=Window}}" FontSize="22" FontWeight="Black" Foreground="White" Margin="0,0,0,30"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Border Style="{StaticResource Card}" Padding="32,28" MaxWidth="760" HorizontalAlignment="Left">
+                        <StackPanel DataContext="{Binding AppSettings}">
+                            <TextBlock Text="{Binding DataContext.Strings.SettingsHeader, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource PageTitle}" Margin="0,0,0,24"/>
 
-                        <TextBlock Text="{Binding DataContext.Strings.UiSettingsHeader, RelativeSource={RelativeSource AncestorType=Window}}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource PrimaryAccent}" Margin="0,0,0,10"/>
-                        <CheckBox IsChecked="{Binding HideInstructions}" Content="{Binding DataContext.Strings.HideBannerCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" Margin="0,0,0,10"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,30">
-                            <TextBlock Text="{Binding DataContext.Strings.LanguageLabel, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <ComboBox ItemsSource="{Binding DataContext.AvailableLanguages, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Language}" Width="150" Padding="5"/>
+                            <!-- Benutzeroberfläche -->
+                            <TextBlock Text="{Binding DataContext.Strings.UiSettingsHeader, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource CardTitle}" Foreground="{StaticResource AccentHoverBrush}" Margin="0,0,0,14"/>
+                            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding HideInstructions}" Margin="0,0,0,16"
+                                      Content="{Binding DataContext.Strings.HideBannerCheckbox, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding DataContext.Strings.LanguageLabel, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource FieldLabel}" Margin="0,0,12,0"/>
+                                <ComboBox ItemsSource="{Binding DataContext.AvailableLanguages, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Language}" Width="170"/>
+                            </StackPanel>
+
+                            <Border Style="{StaticResource Divider}" Margin="0,24"/>
+
+                            <!-- System-Integration -->
+                            <TextBlock Text="{Binding DataContext.Strings.SystemIntegrationHeader, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource CardTitle}" Foreground="{StaticResource AccentHoverBrush}" Margin="0,0,0,14"/>
+                            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding EnableSystemTray}" Margin="0,0,0,16"
+                                      Content="{Binding DataContext.Strings.SystemTrayCheckbox, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding StartMinimized}" Margin="0,0,0,16"
+                                      Content="{Binding DataContext.Strings.StartMinimizedCheckbox, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding AutoStartWindows}" Margin="0,0,0,16"
+                                      Content="{Binding DataContext.Strings.AutoStartCheckbox, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                <TextBlock Text="{Binding DataContext.Strings.ToggleHotkeyLabel, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource FieldLabel}" Margin="0,0,12,0"/>
+                                <TextBox Style="{StaticResource HotkeyInput}" Text="{Binding ToggleHotkeyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="220"
+                                         KeyDown="SettingsHotkey_KeyDown" ToolTip="Klicke rein und drücke Hotkey"/>
+                            </StackPanel>
+
+                            <!-- Admin-Rechte als hervorgehobener Block -->
+                            <Border CornerRadius="{StaticResource RadiusMd}" Background="{StaticResource WarningSoftBrush}" BorderBrush="#55F5A524" BorderThickness="1" Padding="16,14">
+                                <StackPanel>
+                                    <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding RunAsAdmin}" FontWeight="SemiBold" Foreground="{StaticResource WarningBrush}"
+                                              Content="{Binding DataContext.Strings.AlwaysAdminCheckbox, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                    <Button Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Margin="52,12,0,0"
+                                            Content="{Binding DataContext.Strings.RestartAdminBtn, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            Command="{Binding DataContext.RestartAsAdminCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Divider}" Margin="0,24"/>
+
+                            <!-- Updates -->
+                            <TextBlock Text="{Binding DataContext.Strings.UpdatesHeader, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource CardTitle}" Foreground="{StaticResource AccentHoverBrush}" Margin="0,0,0,14"/>
+                            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding AutoUpdate}"
+                                      Content="{Binding DataContext.Strings.AutoUpdateCheckbox, RelativeSource={RelativeSource AncestorType=Window}}"/>
+
+                            <Button Content="{Binding DataContext.Strings.SaveSettingsBtn, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    Command="{Binding DataContext.SaveCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    HorizontalAlignment="Left" Padding="20,10" Margin="0,28,0,0"/>
                         </StackPanel>
-
-                        <TextBlock Text="{Binding DataContext.Strings.SystemIntegrationHeader, RelativeSource={RelativeSource AncestorType=Window}}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource PrimaryAccent}" Margin="0,0,0,10"/>
-                        <CheckBox IsChecked="{Binding EnableSystemTray}" Content="{Binding DataContext.Strings.SystemTrayCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" Margin="0,0,0,10"/>
-
-                        <!-- NEUE OPTIONEN: MINIMIERT STARTEN & FENSTER HOTKEY -->
-                        <CheckBox IsChecked="{Binding StartMinimized}" Content="{Binding DataContext.Strings.StartMinimizedCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" Margin="0,0,0,10"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <TextBlock Text="{Binding DataContext.Strings.ToggleHotkeyLabel, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <TextBox Text="{Binding ToggleHotkeyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="200" Background="#1E293B" Foreground="#38BDF8" FontWeight="Bold" KeyDown="SettingsHotkey_KeyDown" ToolTip="Klicke rein und drücke Hotkey"/>
-                        </StackPanel>
-
-                        <CheckBox IsChecked="{Binding AutoStartWindows}" Content="{Binding DataContext.Strings.AutoStartCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" Margin="0,0,0,10"/>
-                        <CheckBox IsChecked="{Binding RunAsAdmin}" Content="{Binding DataContext.Strings.AlwaysAdminCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#F59E0B" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                        <Button Content="{Binding DataContext.Strings.RestartAdminBtn, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding DataContext.RestartAsAdminCommand, RelativeSource={RelativeSource AncestorType=Window}}" Background="#334155" HorizontalAlignment="Left" Margin="0,0,0,30"/>
-
-                        <TextBlock Text="{Binding DataContext.Strings.UpdatesHeader, RelativeSource={RelativeSource AncestorType=Window}}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource PrimaryAccent}" Margin="0,0,0,10"/>
-                        <CheckBox IsChecked="{Binding AutoUpdate}" Content="{Binding DataContext.Strings.AutoUpdateCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" Margin="0,0,0,10"/>
-                        <Button Content="{Binding DataContext.Strings.SaveSettingsBtn, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding DataContext.SaveCommand, RelativeSource={RelativeSource AncestorType=Window}}" Width="250" HorizontalAlignment="Left" Margin="0,20,0,0" Padding="15"/>
-                    </StackPanel>
-                </Border>
+                    </Border>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
     </Grid>
