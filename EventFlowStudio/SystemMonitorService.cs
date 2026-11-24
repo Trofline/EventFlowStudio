@@ -15,6 +15,9 @@ namespace EventFlowStudio.Services
         public event Action<string>? BluetoothConnected;
         public event Action<string>? BluetoothDisconnected;
         public event Action<string>? UsbConnected;
+        public event Action<string>? Error;
+
+        private string? _lastError;
 
         private readonly HashSet<string> _runningProcesses = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _connectedBtDevices = new(StringComparer.OrdinalIgnoreCase);
@@ -46,7 +49,7 @@ namespace EventFlowStudio.Services
                     UpdateBluetoothSnapshot(firstRun: false);
                     UpdateUsbSnapshot(firstRun: false);
                 }
-                catch { }
+                catch (Exception ex) { ReportError("Überwachung", ex); }
 
                 await Task.Delay(1500, token);
             }
@@ -87,7 +90,7 @@ namespace EventFlowStudio.Services
                     if (!string.IsNullOrEmpty(name)) currentDevices.Add(name);
                 }
             }
-            catch { }
+            catch (Exception ex) { ReportError("Bluetooth-Abfrage", ex); }
 
             if (!firstRun)
             {
@@ -111,7 +114,7 @@ namespace EventFlowStudio.Services
                     if (!string.IsNullOrEmpty(name)) currentDevices.Add(name);
                 }
             }
-            catch { }
+            catch (Exception ex) { ReportError("USB-Abfrage", ex); }
 
             if (!firstRun)
             {
@@ -120,6 +123,15 @@ namespace EventFlowStudio.Services
 
             _connectedUsbDevices.Clear();
             foreach (var d in currentDevices) _connectedUsbDevices.Add(d);
+        }
+
+        // Die Schleife läuft alle 1,5 Sek. Derselbe Fehler wird nur einmal gemeldet, damit das Log nicht vollläuft.
+        private void ReportError(string context, Exception ex)
+        {
+            string message = $"Fehler bei {context}: {ex.Message}";
+            if (message == _lastError) return;
+            _lastError = message;
+            Error?.Invoke(message);
         }
     }
 }
