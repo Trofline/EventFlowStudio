@@ -120,6 +120,8 @@ namespace EventFlowStudio.Services
             Models.ActionType.UnmuteAudio => De ? "Ton an" : "Unmute",
             Models.ActionType.MediaControl => De ? "Medientaste" : "Media key",
             Models.ActionType.SystemPower => De ? "Energie (Standby, Aus ...)" : "Power (sleep, shut down ...)",
+            Models.ActionType.PauseApps => De ? "Apps pausieren (solange Trigger läuft)" : "Pause apps (while trigger runs)",
+            Models.ActionType.RestorePausedApps => De ? "Pausierte Apps wiederherstellen" : "Restore paused apps",
 
             Models.MediaKey.PlayPause => "Play/Pause",
             Models.MediaKey.NextTrack => De ? "Nächster Titel" : "Next track",
@@ -176,12 +178,19 @@ namespace EventFlowStudio.Services
             Models.ActionType.ChangePowerPlan => De ? "Windows-Energieplan, der aktiviert wird." : "Windows power plan to activate.",
             Models.ActionType.SendWebhook => De ? "URL, an die ein JSON-POST geschickt wird (http/https)." : "URL that receives a JSON POST (http/https).",
             Models.ActionType.SystemNotification => De ? "Text der Benachrichtigung im Infobereich." : "Text of the tray notification.",
+            Models.ActionType.PauseApps => De
+                ? "Apps mit ; trennen oder über 🔍 mehrere auswählen. Sie werden geschlossen, solange das Trigger-Programm läuft, und danach wieder so gestartet, wie sie waren (minimiert, maximiert, Fenster oder Tray)."
+                : "Separate apps with ; or pick several via 🔍. They are closed while the trigger program runs and restarted afterwards as they were (minimized, maximized, window or tray).",
+            Models.ActionType.RestorePausedApps => De ? "Startet alle pausierten Apps sofort wieder (auch im Tray-Menü)." : "Restarts all paused apps right away (also in the tray menu).",
             Models.ActionType.SystemPower => De ? "Herunterfahren/Neustart lassen sich 15 Sek. lang mit \"shutdown /a\" abbrechen." : "Shut down/restart can be cancelled for 15 s with \"shutdown /a\".",
             _ => string.Empty,
         };
 
         public string PickRunningTooltip => CurrentLanguage == "Deutsch" ? "Aus laufenden Apps und Prozessen auswählen" : "Pick from running apps and processes";
         public string PickProcessTriggerTitle => CurrentLanguage == "Deutsch" ? "Prozess für den Trigger auswählen" : "Pick a process for the trigger";
+        public string PickProcessPauseTitle => CurrentLanguage == "Deutsch" ? "Apps auswählen, die pausiert werden" : "Pick the apps to pause";
+        public string RestoreDelayLabel => CurrentLanguage == "Deutsch" ? "Wiederherstellen nach (Sek.):" : "Restore after (sec):";
+        public string TrayRestorePaused => CurrentLanguage == "Deutsch" ? "Pausierte Apps wiederherstellen" : "Restore paused apps";
         public string PickProcessActionTitle => CurrentLanguage == "Deutsch" ? "Programm für die Aktion auswählen" : "Pick a program for the action";
         public string PickProcessNoPathWarning => CurrentLanguage == "Deutsch"
             ? "Der Pfad dieses Prozesses ist ohne Admin-Rechte nicht lesbar. Es wurde nur der Name eingetragen. Zum Starten bitte den Pfad über 📁 auswählen oder EventFlow Studio als Administrator starten."

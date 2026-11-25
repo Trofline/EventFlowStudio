@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Controls;
 using System.Windows.Input;
 
 namespace EventFlowStudio.ProcessPicker
@@ -20,23 +21,51 @@ namespace EventFlowStudio.ProcessPicker
 
         public RunningProcessInfo? SelectedProcess { get; private set; }
 
+        // Mehrfachauswahl: Klick setzt/entfernt einen Haken, "Übernehmen" liefert alle angehakten Einträge
+        private readonly bool _multi;
+        private readonly Func<RunningProcessInfo, bool>? _preChecked;
+        public List<RunningProcessInfo> CheckedProcesses => _all.Where(p => p.IsChecked).ToList();
+        public IReadOnlyList<RunningProcessInfo> AllProcesses => _all;
+
         protected override void OnSourceInitialized(EventArgs e)
         {
             base.OnSourceInitialized(e);
             DarkTitleBar.Apply(this);
         }
 
-        public ProcessPickerWindow(string? header = null, bool showAllProcesses = false)
+        public ProcessPickerWindow(string? header = null, bool showAllProcesses = false, bool multiSelect = false, Func<RunningProcessInfo, bool>? preChecked = null)
         {
             InitializeComponent();
+            _multi = multiSelect;
+            _preChecked = preChecked;
             if (!string.IsNullOrWhiteSpace(header)) { HeaderText.Text = header; Title = header; }
             if (showAllProcesses) AllToggle.IsChecked = true;
+            if (_multi)
+            {
+                SubHeaderText.Text = "Klicke alle Programme an, die du auswählen willst. Bereits eingetragene sind schon markiert.";
+                ProcessList.Tag = "multi";
+                SelectButton.IsEnabled = true;
+            }
 
             Loaded += async (_, _) =>
             {
                 SearchBox.Focus();
                 await LoadAsync();
             };
+        }
+
+        /// <summary>
+        /// Mehrfachauswahl. Gibt die angehakten Einträge zurück (oder null bei Abbruch).
+        /// <paramref name="shown"/> enthält alle gelisteten Prozesse, damit der Aufrufer erkennt, was abgewählt wurde.
+        /// </summary>
+        public static List<RunningProcessInfo>? PickMany(Window? owner, string? header, Func<RunningProcessInfo, bool>? preChecked, out IReadOnlyList<RunningProcessInfo> shown)
+        {
+            var dialog = new ProcessPickerWindow(header, false, true, preChecked);
+            if (owner != null && owner.IsVisible) dialog.Owner = owner;
+            else dialog.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            bool ok = dialog.ShowDialog() == true;
+            shown = dialog.AllProcesses;
+            return ok ? dialog.CheckedProcesses : null;
         }
 
         /// <summary>Öffnet den Dialog und gibt die Auswahl zurück (oder null bei Abbruch).</summary>
@@ -64,6 +93,9 @@ namespace EventFlowStudio.ProcessPicker
                 StatusText.Text = "Prozesse konnten nicht gelesen werden: " + ex.Message;
                 return;
             }
+
+            if (_preChecked != null)
+                foreach (var p in _all) p.IsChecked = _preChecked(p);
 
             _view = CollectionViewSource.GetDefaultView(_all);
             _view.Filter = FilterItem;
@@ -101,6 +133,7 @@ namespace EventFlowStudio.ProcessPicker
             if (_view == null) return;
             int visible = _view.Cast<object>().Count();
             CountText.Text = $"{visible} von {_all.Count} Einträgen";
+            if (_multi) UpdateCheckedCount();
 
             if (visible == 0)
             {
@@ -112,7 +145,7 @@ namespace EventFlowStudio.ProcessPicker
             else
             {
                 StatusText.Visibility = Visibility.Collapsed;
-                if (ProcessList.SelectedItem == null || !_view.Contains(ProcessList.SelectedItem))
+                if (!_multi && ProcessList.SelectedItem == null || !_view.Contains(ProcessList.SelectedItem))
                     ProcessList.SelectedIndex = 0;
             }
         }
@@ -133,15 +166,33 @@ namespace EventFlowStudio.ProcessPicker
 
         private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadAsync();
 
+        private void UpdateCheckedCount()
+        {
+            int n = _all.Count(p => p.IsChecked);
+            SelectButton.Content = n > 0 ? $"Übernehmen ({n})" : "Übernehmen";
+        }
+
+        // Mehrfachauswahl: Klick auf einen Eintrag schaltet den Haken um
+        private void ProcessList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (!_multi) return;
+            if (ItemsControl.ContainerFromElement(ProcessList, e.OriginalSource as DependencyObject) is ListBoxItem item && item.DataContext is RunningProcessInfo p)
+            {
+                p.IsChecked = !p.IsChecked;
+                UpdateCheckedCount();
+            }
+        }
+
         private void ProcessList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
+            if (_multi) return;
             SelectButton.IsEnabled = ProcessList.SelectedItem != null;
             if (ProcessList.SelectedItem != null) ProcessList.ScrollIntoView(ProcessList.SelectedItem);
         }
 
         private void ProcessList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if (ProcessList.SelectedItem != null) Confirm();
+            if (!_multi && ProcessList.SelectedItem != null) Confirm();
         }
 
         private void Select_Click(object sender, RoutedEventArgs e) => Confirm();
@@ -150,6 +201,15 @@ namespace EventFlowStudio.ProcessPicker
         {
             switch (e.Key)
             {
+                case Key.Space when _multi && !SearchBox.IsKeyboardFocused && ProcessList.SelectedItem is RunningProcessInfo current:
+                    current.IsChecked = !current.IsChecked;
+                    UpdateCheckedCount();
+                    e.Handled = true;
+                    break;
+                case Key.Enter when _multi:
+                    Confirm();
+                    e.Handled = true;
+                    break;
                 case Key.Enter when ProcessList.SelectedItem != null:
                     Confirm();
                     e.Handled = true;
@@ -175,6 +235,7 @@ namespace EventFlowStudio.ProcessPicker
 
         private void Confirm()
         {
+            if (_multi) { DialogResult = true; return; }
             SelectedProcess = ProcessList.SelectedItem as RunningProcessInfo;
             if (SelectedProcess == null) return;
             DialogResult = true;

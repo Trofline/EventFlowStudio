@@ -77,6 +77,18 @@
                 <DataTrigger Binding="{Binding Type}" Value="SystemNotification">
                     <Setter Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="RestorePausedApps">
+                    <Setter Property="Visibility" Value="Hidden"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PauseAppsOnlyStyle" TargetType="FrameworkElement">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="PauseApps">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -189,6 +201,9 @@
                     <Setter Property="Visibility" Value="Visible"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Type}" Value="CloseProcess">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="PauseApps">
                     <Setter Property="Visibility" Value="Visible"/>
                 </DataTrigger>
             </Style.Triggers>
@@ -570,6 +585,10 @@
                                                                 <StackPanel Orientation="Horizontal" Style="{StaticResource StartProcessOnlyStyle}" Margin="0,4,20,4">
                                                                     <TextBlock Text="{Binding DataContext.Strings.WindowStateLabel, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource InlineLabel}"/>
                                                                     <ComboBox ItemsSource="{Binding DataContext.LaunchStates, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding LaunchState}" ItemTemplate="{StaticResource EnumItemTemplate}" Width="130"/>
+                                                                </StackPanel>
+                                                                <StackPanel Orientation="Horizontal" Style="{StaticResource PauseAppsOnlyStyle}" Margin="0,4,20,4">
+                                                                    <TextBlock Text="{Binding DataContext.Strings.RestoreDelayLabel, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource InlineLabel}"/>
+                                                                    <TextBox Text="{Binding ExitDelaySeconds, UpdateSourceTrigger=PropertyChanged}" Width="64" MinHeight="30" Padding="8,4" HorizontalContentAlignment="Center"/>
                                                                 </StackPanel>
                                                                 <StackPanel Orientation="Horizontal" Margin="0,4,20,4">
                                                                     <TextBlock Text="{Binding DataContext.Strings.StartDelayLabel, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource InlineLabel}"/>

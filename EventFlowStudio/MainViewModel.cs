@@ -193,6 +193,9 @@ namespace EventFlowStudio.ViewModels
 
         public void Shutdown() => _engine.Shutdown();
 
+        public bool HasPausedApps => _engine.HasPausedApps;
+        public void RestorePausedAppsNow() => _engine.RestoreAllPausedApps();
+
         private void ExportPresets()
         {
             var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "JSON Profile (*.json)|*.json", FileName = "EventFlow_Profiles.json" };
@@ -268,6 +271,7 @@ namespace EventFlowStudio.ViewModels
         private bool PickProcessForAction(ActionItem? action)
         {
             if (action == null) return false;
+            if (action.Type == ActionType.PauseApps) return PickAppsToPause(action);
             var picked = ProcessPicker.ProcessPickerWindow.Pick(DialogOwner, Strings.PickProcessActionTitle);
             if (picked == null) return false;
 
@@ -282,6 +286,24 @@ namespace EventFlowStudio.ViewModels
                 if (action.Type == ActionType.StartProcess)
                     System.Windows.MessageBox.Show(Strings.PickProcessNoPathWarning, Strings.AppTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+            return true;
+        }
+
+        // Mehrfachauswahl. Bereits eingetragene Apps sind angehakt; Einträge, die gerade nicht laufen, bleiben erhalten.
+        private bool PickAppsToPause(ActionItem action)
+        {
+            var existing = AppPauseService.ParseTargets(action.TargetPath);
+            var result = ProcessPicker.ProcessPickerWindow.PickMany(DialogOwner, Strings.PickProcessPauseTitle,
+                p => existing.Any(t => AppPauseService.TargetMatches(t, p.ProcessName, p.ExecutablePath)), out var shown);
+            if (result == null) return false;
+
+            var targets = existing.Where(t => !shown.Any(p => AppPauseService.TargetMatches(t, p.ProcessName, p.ExecutablePath))).ToList();
+            foreach (var p in result)
+            {
+                string entry = p.ExecutablePath ?? p.ProcessName + ".exe";
+                if (!targets.Contains(entry, StringComparer.OrdinalIgnoreCase)) targets.Add(entry);
+            }
+            action.TargetPath = AppPauseService.JoinTargets(targets);
             return true;
         }
 
