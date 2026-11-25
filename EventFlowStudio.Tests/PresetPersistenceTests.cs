@@ -187,5 +187,39 @@ namespace EventFlowStudio.Tests
             engine.LoadPresets();
             Assert.Equal("70573c21-bbd6-45e6-a8aa-06cbd7947574", Assert.Single(engine.Presets).Id);
         }
+
+        [Fact]
+        public void Toggling_a_profile_saves_only_its_active_state()
+        {
+            var engine = CreateEngine();
+            engine.LoadPresets();
+            var preset = Assert.Single(engine.Presets);
+            Assert.True(preset.IsActive);
+
+            // Ungespeicherte Bearbeitung, die nicht mit auf die Platte darf
+            preset.Name = "Noch nicht gespeichert";
+            preset.IsActive = false;
+
+            Assert.True(engine.SavePresetActiveState(preset));
+
+            var reloaded = CreateEngine();
+            reloaded.LoadPresets();
+            var loaded = Assert.Single(reloaded.Presets);
+            Assert.False(loaded.IsActive);
+            Assert.Equal("Standard Profil", loaded.Name);
+        }
+
+        [Fact]
+        public void Toggling_a_never_saved_profile_reports_false()
+        {
+            var engine = CreateEngine();
+            engine.LoadPresets();
+            var unsaved = new Preset { Name = "Neu" };
+            engine.Presets.Add(unsaved);
+
+            unsaved.IsActive = false;
+
+            Assert.False(engine.SavePresetActiveState(unsaved));
+        }
     }
 }

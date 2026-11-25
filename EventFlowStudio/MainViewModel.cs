@@ -148,7 +148,24 @@ namespace EventFlowStudio.ViewModels
             LogOutput = string.Join("\n", _logLines);
         }
 
-        private void OnItemChanged(object? sender, PropertyChangedEventArgs e) => MarkDirty();
+        private void OnItemChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            // Der An/Aus-Schalter eines Profils wird sofort gespeichert und zählt nicht als
+            // ungespeicherte Änderung. Nur bei einem noch nie gespeicherten Profil bleibt "nicht gespeichert".
+            if (sender is Preset preset && e.PropertyName == nameof(Preset.IsActive))
+            {
+                if (!_engine.SavePresetActiveState(preset)) RunOnUi(MarkDirty);
+                return;
+            }
+            MarkDirty();
+        }
+
+        private static void RunOnUi(Action action)
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess()) dispatcher.BeginInvoke(action);
+            else action();
+        }
 
         private void TrackCollection<T>(ObservableCollection<T> collection) where T : INotifyPropertyChanged
         {
