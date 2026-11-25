@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:EventFlowStudio.ViewModels"
+        xmlns:svc="clr-namespace:EventFlowStudio.Services"
         Title="{Binding Strings.AppTitle}" 
         Height="850" Width="1300"
         Background="#0F172A" Foreground="#F8FAFC"
@@ -14,6 +15,75 @@
     <Window.Resources>
         <vm:InverseBooleanToVisibilityConverter x:Key="InvBoolToVis"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <vm:EnumTextConverter x:Key="EnumText"/>
+
+        <!-- Zeigt Enum-Werte (Trigger, Aktionen, Fensterzustand) übersetzt an -->
+        <DataTemplate x:Key="EnumItemTemplate">
+            <TextBlock>
+                <TextBlock.Text>
+                    <MultiBinding Converter="{StaticResource EnumText}">
+                        <Binding/>
+                        <Binding Path="CurrentLanguage" Source="{x:Static svc:LocalizationService.Instance}"/>
+                    </MultiBinding>
+                </TextBlock.Text>
+            </TextBlock>
+        </DataTemplate>
+
+        <Style x:Key="HintTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#64748B"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="2,4,0,0"/>
+        </Style>
+
+        <!-- Pfad/Wert-Feld einer Aktion: bei Aktionen ohne Wert ausblenden -->
+        <Style x:Key="ActionPathBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="LockWorkstation">
+                    <Setter Property="Visibility" Value="Hidden"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="ToggleMute">
+                    <Setter Property="Visibility" Value="Hidden"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Datei-Auswahl nur für Aktionen mit Pfad -->
+        <Style x:Key="BrowseButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="StartProcess">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="KillProcess">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="OpenUrl">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Argumente / Fenster-Optionen nur für "Programm starten" bzw. Argumente auch für "Befehl ausführen" -->
+        <Style x:Key="StartProcessOnlyStyle" TargetType="FrameworkElement">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="StartProcess">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ArgumentsPanelStyle" TargetType="FrameworkElement">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="StartProcess">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="RunCommand">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
 
         <SolidColorBrush x:Key="CardBg" Color="#1E293B"/>
         <SolidColorBrush x:Key="InputBg" Color="#0F172A"/>
@@ -33,6 +103,16 @@
             <Setter Property="Visibility" Value="Visible"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Type}" Value="GlobalHotkey">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <!-- Trigger ohne Wert -->
+                <DataTrigger Binding="{Binding Type}" Value="AppStartup">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="SessionLocked">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="SessionUnlocked">
                     <Setter Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
             </Style.Triggers>
@@ -185,7 +265,15 @@
                                         </StackPanel>
                                     </Grid>
 
-                                    <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" FontSize="16" FontWeight="Bold" Background="#0F172A" Padding="10" Margin="0,0,0,20"/>
+                                    <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" FontSize="16" FontWeight="Bold" Background="#0F172A" Padding="10" Margin="0,0,0,10"/>
+
+                                    <!-- NEU: Cooldown pro Profil -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                        <TextBlock Text="{Binding DataContext.Strings.CooldownLabel, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <TextBox Text="{Binding CooldownSeconds, UpdateSourceTrigger=PropertyChanged}" Width="60"
+                                                 ToolTip="{Binding DataContext.Strings.CooldownHint, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                        <TextBlock Text="{Binding DataContext.Strings.CooldownHint, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource HintTextStyle}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                    </StackPanel>
 
                                     <!-- MEHRERE TRIGGER LISTE -->
                                     <TextBlock Text="{Binding DataContext.Strings.TriggersHeader, RelativeSource={RelativeSource AncestorType=Window}}" FontWeight="Bold" Foreground="#94A3B8" Margin="0,0,0,5"/>
@@ -194,6 +282,7 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border Background="#0F172A" Margin="0,0,0,8" Padding="8" CornerRadius="6">
+                                                    <StackPanel>
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="200"/>
@@ -201,13 +290,22 @@
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
 
-                                                        <ComboBox ItemsSource="{Binding DataContext.TriggerTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" Margin="0,0,8,0" Padding="6"/>
+                                                        <ComboBox ItemsSource="{Binding DataContext.TriggerTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" ItemTemplate="{StaticResource EnumItemTemplate}" Margin="0,0,8,0" Padding="6"/>
 
-                                                        <TextBox Grid.Column="1" Text="{Binding TargetName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource TargetNameBoxStyle}" ToolTip="Name (z.B. ac_client)"/>
-                                                        <TextBox Grid.Column="1" Text="{Binding TargetName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource HotkeyBoxStyle}" ToolTip="Klicke rein und drücke Hotkey" Background="#1E293B" Foreground="#38BDF8" FontWeight="Bold" KeyDown="HotkeyTextBox_KeyDown"/>
+                                                        <TextBox Grid.Column="1" Text="{Binding TargetName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource TargetNameBoxStyle}"/>
+                                                        <TextBox Grid.Column="1" Text="{Binding TargetName, Mode=OneWay}" IsReadOnly="True" IsReadOnlyCaretVisible="True" Style="{StaticResource HotkeyBoxStyle}" Background="#1E293B" Foreground="#38BDF8" FontWeight="Bold" PreviewKeyDown="HotkeyTextBox_KeyDown"/>
 
                                                         <Button Grid.Column="2" Content="❌" Background="Red" Margin="8,0,0,0" Command="{Binding DataContext.DeleteTriggerCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
                                                     </Grid>
+                                                    <TextBlock Style="{StaticResource HintTextStyle}">
+                                                        <TextBlock.Text>
+                                                            <MultiBinding Converter="{StaticResource EnumText}" ConverterParameter="hint">
+                                                                <Binding Path="Type"/>
+                                                                <Binding Path="CurrentLanguage" Source="{x:Static svc:LocalizationService.Instance}"/>
+                                                            </MultiBinding>
+                                                        </TextBlock.Text>
+                                                    </TextBlock>
+                                                    </StackPanel>
                                                 </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
@@ -224,24 +322,49 @@
                                                         <Grid>
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="Auto"/>
-                                                                <ColumnDefinition Width="150"/>
+                                                                <ColumnDefinition Width="190"/>
                                                                 <ColumnDefinition Width="*"/>
                                                                 <ColumnDefinition Width="Auto"/>
                                                                 <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
                                                             <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                                            <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.ActionTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" Margin="0,0,10,0" Padding="6"/>
+                                                            <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.ActionTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" ItemTemplate="{StaticResource EnumItemTemplate}" Margin="0,0,10,0" Padding="6"/>
 
-                                                            <TextBox Grid.Column="2" Text="{Binding TargetPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                                                            <TextBox Grid.Column="2" Text="{Binding TargetPath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ActionPathBoxStyle}" Margin="0,0,5,0"/>
 
                                                             <Button Grid.Column="3" Content="📁 ..." Margin="2,0" ToolTip="Datei suchen"
                                                                     Command="{Binding DataContext.BrowseFileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                    CommandParameter="{Binding}" Background="#334155"/>
+                                                                    CommandParameter="{Binding}" Background="#334155" Style="{StaticResource BrowseButtonStyle}"/>
 
                                                             <Button Grid.Column="4" Content="❌" Background="Red" Margin="8,0,0,0" Command="{Binding DataContext.DeleteActionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
                                                         </Grid>
 
-                                                        <StackPanel Orientation="Horizontal" Margin="30,10,0,0">
+                                                        <TextBlock Margin="30,4,0,0" Style="{StaticResource HintTextStyle}">
+                                                            <TextBlock.Text>
+                                                                <MultiBinding Converter="{StaticResource EnumText}" ConverterParameter="hint">
+                                                                    <Binding Path="Type"/>
+                                                                    <Binding Path="CurrentLanguage" Source="{x:Static svc:LocalizationService.Instance}"/>
+                                                                </MultiBinding>
+                                                            </TextBlock.Text>
+                                                        </TextBlock>
+
+                                                        <!-- NEU: Argumente, Fensterzustand, Start-Verzögerung -->
+                                                        <WrapPanel Margin="30,8,0,0">
+                                                            <StackPanel Orientation="Horizontal" Style="{StaticResource ArgumentsPanelStyle}" Margin="0,0,15,4">
+                                                                <TextBlock Text="{Binding DataContext.Strings.ArgumentsLabel, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                                <TextBox Text="{Binding Arguments, UpdateSourceTrigger=PropertyChanged}" Width="220"/>
+                                                            </StackPanel>
+                                                            <StackPanel Orientation="Horizontal" Style="{StaticResource StartProcessOnlyStyle}" Margin="0,0,15,4">
+                                                                <TextBlock Text="{Binding DataContext.Strings.WindowStateLabel, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                                <ComboBox ItemsSource="{Binding DataContext.LaunchStates, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding LaunchState}" ItemTemplate="{StaticResource EnumItemTemplate}" Width="120" Padding="4"/>
+                                                            </StackPanel>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,0,15,4">
+                                                                <TextBlock Text="{Binding DataContext.Strings.StartDelayLabel, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                                <TextBox Text="{Binding DelaySeconds, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+                                                            </StackPanel>
+                                                        </WrapPanel>
+
+                                                        <StackPanel Orientation="Horizontal" Margin="30,6,0,0" Style="{StaticResource StartProcessOnlyStyle}">
                                                             <CheckBox IsChecked="{Binding RunAsAdmin}" Content="{Binding DataContext.Strings.RunAsAdminCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#F59E0B" FontWeight="Bold" Margin="0,0,15,0"/>
                                                             <CheckBox IsChecked="{Binding TerminateOnTriggerProcessExit}" Content="{Binding DataContext.Strings.TerminateCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="#CBD5E1" Margin="0,0,15,0"/>
 
@@ -283,7 +406,7 @@
                         <CheckBox IsChecked="{Binding StartMinimized}" Content="{Binding DataContext.Strings.StartMinimizedCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" Margin="0,0,0,10"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                             <TextBlock Text="{Binding DataContext.Strings.ToggleHotkeyLabel, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <TextBox Text="{Binding ToggleHotkeyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="200" Background="#1E293B" Foreground="#38BDF8" FontWeight="Bold" KeyDown="SettingsHotkey_KeyDown" ToolTip="Klicke rein und drücke Hotkey"/>
+                            <TextBox Text="{Binding ToggleHotkeyText, Mode=OneWay}" IsReadOnly="True" IsReadOnlyCaretVisible="True" Width="200" Background="#1E293B" Foreground="#38BDF8" FontWeight="Bold" PreviewKeyDown="SettingsHotkey_KeyDown" ToolTip="Klicke rein und drücke Hotkey. Entf/Esc löscht."/>
                         </StackPanel>
 
                         <CheckBox IsChecked="{Binding AutoStartWindows}" Content="{Binding DataContext.Strings.AutoStartCheckbox, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="14" Margin="0,0,0,10"/>

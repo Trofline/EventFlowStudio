@@ -15,6 +15,7 @@ namespace EventFlowStudio.Services
         public event Action<string>? BluetoothConnected;
         public event Action<string>? BluetoothDisconnected;
         public event Action<string>? UsbConnected;
+        public event Action<string>? UsbDisconnected;
 
         private readonly HashSet<string> _runningProcesses = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _connectedBtDevices = new(StringComparer.OrdinalIgnoreCase);
@@ -54,9 +55,16 @@ namespace EventFlowStudio.Services
 
         private void UpdateProcessSnapshot(bool firstRun)
         {
-            var currentProcesses = Process.GetProcesses()
-                                          .Select(p => p.ProcessName)
-                                          .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            // Process-Objekte halten Handles, ohne Dispose wächst die Handle-Zahl alle 1,5 Sek.
+            var currentProcesses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in Process.GetProcesses())
+            {
+                using (p)
+                {
+                    try { currentProcesses.Add(p.ProcessName); }
+                    catch (InvalidOperationException) { } // Prozess wurde zwischenzeitlich beendet
+                }
+            }
 
             if (!firstRun)
             {
@@ -81,10 +89,14 @@ namespace EventFlowStudio.Services
             try
             {
                 using var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_PNPEntity WHERE PNPClass = 'Bluetooth' AND Status = 'OK'");
-                foreach (ManagementObject device in searcher.Get().Cast<ManagementObject>())
+                using var results = searcher.Get();
+                foreach (ManagementObject device in results.Cast<ManagementObject>())
                 {
-                    string? name = device["Name"]?.ToString();
-                    if (!string.IsNullOrEmpty(name)) currentDevices.Add(name);
+                    using (device)
+                    {
+                        string? name = device["Name"]?.ToString();
+                        if (!string.IsNullOrEmpty(name)) currentDevices.Add(name);
+                    }
                 }
             }
             catch { }
@@ -105,10 +117,14 @@ namespace EventFlowStudio.Services
             try
             {
                 using var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_PnPEntity WHERE DeviceID LIKE 'USB%' AND Status = 'OK'");
-                foreach (ManagementObject device in searcher.Get().Cast<ManagementObject>())
+                using var results = searcher.Get();
+                foreach (ManagementObject device in results.Cast<ManagementObject>())
                 {
-                    string? name = device["Name"]?.ToString();
-                    if (!string.IsNullOrEmpty(name)) currentDevices.Add(name);
+                    using (device)
+                    {
+                        string? name = device["Name"]?.ToString();
+                        if (!string.IsNullOrEmpty(name)) currentDevices.Add(name);
+                    }
                 }
             }
             catch { }
@@ -116,6 +132,7 @@ namespace EventFlowStudio.Services
             if (!firstRun)
             {
                 foreach (var dev in currentDevices.Except(_connectedUsbDevices)) UsbConnected?.Invoke(dev);
+                foreach (var dev in _connectedUsbDevices.Except(currentDevices)) UsbDisconnected?.Invoke(dev);
             }
 
             _connectedUsbDevices.Clear();
