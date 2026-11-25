@@ -137,7 +137,7 @@ namespace EventFlowStudio.ViewModels
                 if (AppSettings.AutoStartWindows) key.SetValue(appName, $"\"{appPath}\"");
                 else key.DeleteValue(appName, false);
             }
-            catch { }
+            catch (Exception ex) { _engine.Log($"Autostart konnte nicht gesetzt werden: {ex.Message}"); }
         }
 
         private void RestartAsAdmin()
@@ -147,7 +147,7 @@ namespace EventFlowStudio.ViewModels
                 Process.Start(new ProcessStartInfo { FileName = Process.GetCurrentProcess().MainModule!.FileName, UseShellExecute = true, Verb = "runas" });
                 Environment.Exit(0);
             }
-            catch { }
+            catch (Exception ex) { _engine.Log($"Neustart als Administrator fehlgeschlagen: {ex.Message}"); }
         }
 
         private void AddNewPreset() { Presets.Add(new Preset { Name = "⚡ Neues Profil" }); SelectedPreset = Presets.Last(); }

@@ -30,8 +30,14 @@ namespace EventFlowStudio.Services
         public event Action? ToggleMainWindow; // NEU: Event für das Fenster
 
         public ExecutionEngine()
+            : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "EventFlowStudio"))
         {
-            _appDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "EventFlowStudio");
+        }
+
+        // Erlaubt einen eigenen Datenordner (z.B. für Tests)
+        public ExecutionEngine(string appDataFolder)
+        {
+            _appDataFolder = appDataFolder;
             if (!Directory.Exists(_appDataFolder)) Directory.CreateDirectory(_appDataFolder);
 
             _configFile = Path.Combine(_appDataFolder, "presets_config_v4.json");
@@ -57,6 +63,7 @@ namespace EventFlowStudio.Services
             _monitor.BluetoothConnected += name => CheckTriggers(TriggerType.BluetoothConnected, name);
             _monitor.BluetoothDisconnected += name => CheckTriggers(TriggerType.BluetoothDisconnected, name);
             _monitor.UsbConnected += name => CheckTriggers(TriggerType.UsbDeviceConnected, name);
+            _monitor.Error += Log;
 
             _monitor.StartMonitoring();
             Log("EventFlow Engine gestartet.");
@@ -115,7 +122,7 @@ namespace EventFlowStudio.Services
             }
         }
 
-        private bool IsNameMatch(string triggerTarget, string actualTarget)
+        public static bool IsNameMatch(string triggerTarget, string actualTarget)
         {
             if (string.IsNullOrWhiteSpace(triggerTarget) || string.IsNullOrWhiteSpace(actualTarget)) return false;
             return actualTarget.Equals(triggerTarget, StringComparison.OrdinalIgnoreCase) ||
@@ -162,7 +169,8 @@ namespace EventFlowStudio.Services
                         var proc = Process.GetProcessById(action.LaunchedProcessId.Value);
                         if (!proc.HasExited) { AggressiveKill(proc); Log($"Auto-Kill PID: {Path.GetFileName(action.TargetPath)}"); killedByPid = true; }
                     }
-                    catch { }
+                    catch (ArgumentException) { Log($"Prozess {action.LaunchedProcessId} läuft nicht mehr: {Path.GetFileName(action.TargetPath)}"); }
+                    catch (Exception ex) { Log($"Fehler beim Beenden von PID {action.LaunchedProcessId}: {ex.Message}"); }
                     action.LaunchedProcessId = null;
                 }
                 if (!killedByPid && !string.IsNullOrWhiteSpace(action.TargetPath)) KillProcessByNameOrPath(action.TargetPath);
@@ -178,7 +186,7 @@ namespace EventFlowStudio.Services
                 if (!processes.Any()) processes = Process.GetProcesses().Where(p => p.ProcessName.ToLower().Contains(exactName.Replace(" ", "").ToLower())).ToList();
                 foreach (var p in processes) { AggressiveKill(p); Log($"Beendet (Smart-Kill): {p.ProcessName}"); }
             }
-            catch { }
+            catch (Exception ex) { Log($"Fehler beim Beenden von {targetPath}: {ex.Message}"); }
         }
 
         private void AggressiveKill(Process p)
@@ -188,7 +196,7 @@ namespace EventFlowStudio.Services
             {
                 Process.Start(new ProcessStartInfo { FileName = "taskkill", Arguments = $"/F /T /PID {p.Id}", CreateNoWindow = true, UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden, Verb = "runas" });
             }
-            catch { }
+            catch (Exception ex) { Log($"Fehler beim Beenden von PID {p.Id}: {ex.Message}"); }
         }
 
         private JsonSerializerOptions GetJsonOptions()
@@ -214,7 +222,11 @@ namespace EventFlowStudio.Services
                     var loaded = JsonSerializer.Deserialize<ObservableCollection<Preset>>(File.ReadAllText(_configFile), GetJsonOptions());
                     if (loaded != null) { Presets.Clear(); foreach (var p in loaded) Presets.Add(p); }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Log($"Fehler beim Laden der Profile: {ex.Message}");
+                    BackupUnreadableFile(_configFile);
+                }
             }
 
             foreach (var p in Presets)
@@ -241,8 +253,20 @@ namespace EventFlowStudio.Services
                     var loaded = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_settingsFile), GetJsonOptions());
                     if (loaded != null) Settings = loaded;
                 }
-                catch { }
+                catch (Exception ex) { Log($"Fehler beim Laden der Einstellungen: {ex.Message}"); }
             }
+        }
+
+        // Sichert eine nicht lesbare Datei, bevor sie durch die Standardwerte überschrieben wird
+        private void BackupUnreadableFile(string path)
+        {
+            try
+            {
+                string backup = Path.Combine(_appDataFolder, $"{Path.GetFileNameWithoutExtension(path)}_unreadable_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+                File.Copy(path, backup, true);
+                Log($"Nicht lesbare Datei gesichert unter: {backup}");
+            }
+            catch (Exception ex) { Log($"Sicherung der nicht lesbaren Datei fehlgeschlagen: {ex.Message}"); }
         }
 
         public void ExportPresets(string path)

@@ -233,7 +233,7 @@ del ""%~f0""
                     _log("Sicherheits-Backup der Profile wurde angelegt.");
                 }
             }
-            catch { }
+            catch (Exception ex) { _log($"Backup der Profile fehlgeschlagen: {ex.Message}"); }
         }
     }
 }
