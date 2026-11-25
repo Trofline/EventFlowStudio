@@ -12,14 +12,19 @@ namespace EventFlowStudio.Models
     public enum TriggerType
     {
         ProcessStarted, ProcessStopped, BluetoothConnected, BluetoothDisconnected, UsbDeviceConnected, GlobalHotkey, AppStartup,
-        UsbDeviceDisconnected, TimeOfDay, Interval, UserIdle, SessionLocked, SessionUnlocked
+        UsbDeviceDisconnected, TimeOfDay, Interval, UserIdle, SessionLocked, SessionUnlocked,
+        UserReturned, ForegroundApp, NetworkConnected, NetworkDisconnected, PowerPluggedIn, PowerUnplugged, BatteryLow, SystemResumed
     }
 
     public enum ActionType
     {
         StartProcess, KillProcess, ChangePowerPlan, SendWebhook, SystemNotification,
-        OpenUrl, RunCommand, LockWorkstation, ToggleMute, EnableProfile, DisableProfile
+        OpenUrl, RunCommand, LockWorkstation, ToggleMute, EnableProfile, DisableProfile,
+        CloseProcess, SetVolume, MuteAudio, UnmuteAudio, MediaControl, SystemPower
     }
+
+    public enum MediaKey { PlayPause, NextTrack, PreviousTrack, Stop, VolumeUp, VolumeDown }
+    public enum SystemPowerCommand { MonitorOff, Sleep, Hibernate, SignOut, Shutdown, Restart }
 
     // Minimized zeigte früher auf ProcessWindowStyle.Hidden, dadurch war das Fenster unsichtbar statt minimiert.
     public enum WindowLaunchState { Normal = ProcessWindowStyle.Normal, Minimized = ProcessWindowStyle.Minimized, Maximized = ProcessWindowStyle.Maximized, Hidden = ProcessWindowStyle.Hidden }
@@ -95,6 +100,8 @@ namespace EventFlowStudio.Models
         private PowerPlanType _powerPlan = PowerPlanType.HighPerformance;
         private string _webhookUrl = "https://";
         private string _notificationMessage = "Aktion ausgeführt.";
+        private MediaKey _mediaKey = MediaKey.PlayPause;
+        private SystemPowerCommand _systemPowerCommand = SystemPowerCommand.Sleep;
 
         public string Id { get; set; } = Guid.NewGuid().ToString();
 
@@ -110,6 +117,8 @@ namespace EventFlowStudio.Models
         public PowerPlanType PowerPlan { get => _powerPlan; set => SetProperty(ref _powerPlan, value); }
         public string WebhookUrl { get => _webhookUrl; set => SetProperty(ref _webhookUrl, value); }
         public string NotificationMessage { get => _notificationMessage; set => SetProperty(ref _notificationMessage, value); }
+        public MediaKey MediaKey { get => _mediaKey; set => SetProperty(ref _mediaKey, value); }
+        public SystemPowerCommand SystemPowerCommand { get => _systemPowerCommand; set => SetProperty(ref _systemPowerCommand, value); }
 
         [JsonIgnore]
         public int? LaunchedProcessId { get; set; }

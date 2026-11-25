@@ -46,6 +46,9 @@ namespace EventFlowStudio.Services
         private readonly Dictionary<TriggerCondition, DateTime> _timeOfDayFired = new();
         private readonly Dictionary<TriggerCondition, DateTime> _intervalNextRun = new();
         private readonly HashSet<TriggerCondition> _idleFired = new();
+        private readonly HashSet<TriggerCondition> _wasAway = new();
+        private readonly HashSet<TriggerCondition> _batteryLowFired = new();
+        private bool? _lastOnAcPower;
 
         public event Action<string>? LogMessage;
         public event Action? ToggleMainWindow; // NEU: Event für das Fenster
@@ -83,12 +86,17 @@ namespace EventFlowStudio.Services
             _monitor.BluetoothDisconnected += name => RunOnUi(() => CheckTriggers(TriggerType.BluetoothDisconnected, name));
             _monitor.UsbConnected += name => RunOnUi(() => CheckTriggers(TriggerType.UsbDeviceConnected, name));
             _monitor.UsbDisconnected += name => RunOnUi(() => CheckTriggers(TriggerType.UsbDeviceDisconnected, name));
+            _monitor.ForegroundAppChanged += name => RunOnUi(() => CheckTriggers(TriggerType.ForegroundApp, name));
+            _monitor.NetworkConnected += name => RunOnUi(() => CheckTriggers(TriggerType.NetworkConnected, name));
+            _monitor.NetworkDisconnected += name => RunOnUi(() => CheckTriggers(TriggerType.NetworkDisconnected, name));
 
+            RefreshUsedTriggerTypes();
             _monitor.StartMonitoring();
 
             try
             {
                 SystemEvents.SessionSwitch += OnSessionSwitch;
+                SystemEvents.PowerModeChanged += OnPowerModeChanged;
                 _sessionEventsHooked = true;
             }
             catch (Exception ex) { Log($"Sperr-/Entsperr-Ereignisse nicht verfügbar: {ex.Message}"); }
@@ -111,6 +119,7 @@ namespace EventFlowStudio.Services
             if (_sessionEventsHooked)
             {
                 SystemEvents.SessionSwitch -= OnSessionSwitch;
+                SystemEvents.PowerModeChanged -= OnPowerModeChanged;
                 _sessionEventsHooked = false;
             }
         }
@@ -135,6 +144,18 @@ namespace EventFlowStudio.Services
                 RunOnUi(() => CheckTriggers(TriggerType.SessionUnlocked, "Windows"));
         }
 
+        private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode == PowerModes.Resume) RunOnUi(() => CheckTriggers(TriggerType.SystemResumed, "Windows"));
+        }
+
+        // Der Monitor fragt Bluetooth/USB (WMI), WLAN (netsh) und die Vordergrund-App nur ab,
+        // wenn ein aktives Profil den passenden Trigger nutzt. Vorher liefen die WMI-Abfragen immer alle 1,5 Sek.
+        private void RefreshUsedTriggerTypes()
+        {
+            _monitor.UsedTriggerTypes = Presets.Where(p => p.IsActive).SelectMany(p => p.Triggers).Select(t => t.Type).ToHashSet();
+        }
+
         private void OnGlobalKeyPressed(uint modifiers, uint vkCode)
         {
             // Prüfen, ob der Globale App-Hotkey gedrückt wurde
@@ -154,12 +175,10 @@ namespace EventFlowStudio.Services
 
         private void CheckTriggers(TriggerType type, string targetName)
         {
-            bool needsName = type != TriggerType.AppStartup && type != TriggerType.SessionLocked && type != TriggerType.SessionUnlocked;
-
             // ToList: Aktionen können Profile aktivieren/deaktivieren, während wir hier durchlaufen
             foreach (var preset in Presets.Where(p => p.IsActive).ToList())
             {
-                if (preset.Triggers.Any(t => t.Type == type && (!needsName || IsNameMatch(t.TargetName, targetName))))
+                if (preset.Triggers.Any(t => t.Type == type && IsTriggerMatch(t, targetName)))
                 {
                     TryRunPreset(preset, $"{type} -> {targetName}");
                 }
@@ -179,11 +198,35 @@ namespace EventFlowStudio.Services
             }
         }
 
+        private static bool IsTriggerMatch(TriggerCondition trigger, string actual) => trigger.Type switch
+        {
+            // Ereignisse ohne Wert: jeder Trigger dieses Typs passt
+            TriggerType.AppStartup or TriggerType.SessionLocked or TriggerType.SessionUnlocked or
+            TriggerType.PowerPluggedIn or TriggerType.PowerUnplugged or TriggerType.SystemResumed => true,
+            TriggerType.NetworkConnected or TriggerType.NetworkDisconnected => IsNetworkMatch(trigger.TargetName, actual),
+            _ => IsNameMatch(trigger.TargetName, actual),
+        };
+
+        /// <summary>Netzwerk-Trigger: leeres Feld = jede Verbindung (Ereignis "*"), sonst Teil des WLAN-Namens.</summary>
+        public static bool IsNetworkMatch(string? triggerTarget, string actual)
+        {
+            if (string.IsNullOrWhiteSpace(triggerTarget)) return actual == SystemMonitorService.AnyNetwork;
+            return actual != SystemMonitorService.AnyNetwork && IsNameMatch(triggerTarget, actual);
+        }
+
         // Zeitgesteuerte Trigger (Uhrzeit, Intervall, Inaktivität). Läuft alle 5 Sek. auf dem UI-Thread.
         private void OnScheduleTick()
         {
+            RefreshUsedTriggerTypes();
+
             var now = DateTime.Now;
             double idleSeconds = GetIdleSeconds();
+            var power = SystemActions.GetPowerStatus();
+
+            // Netzteil an/ab als Ereignis (nur Wechsel, nicht der Zustand beim Start)
+            if (_lastOnAcPower.HasValue && _lastOnAcPower.Value != power.OnAcPower)
+                CheckTriggers(power.OnAcPower ? TriggerType.PowerPluggedIn : TriggerType.PowerUnplugged, power.OnAcPower ? "Netzteil" : "Akku");
+            _lastOnAcPower = power.OnAcPower;
 
             foreach (var preset in Presets.Where(p => p.IsActive).ToList())
             {
@@ -228,6 +271,24 @@ namespace EventFlowStudio.Services
                             }
                             else _idleFired.Remove(trigger);
                             break;
+
+                        case TriggerType.UserReturned:
+                            if (!TryParseMinutes(trigger.TargetName, out double awayMinutes) || idleSeconds < 0) break;
+                            if (idleSeconds >= awayMinutes * 60) _wasAway.Add(trigger);
+                            // Erste Eingabe nach der Pause (Tick alle 5 Sek., daher < 10 Sek.)
+                            else if (idleSeconds < 10 && _wasAway.Remove(trigger))
+                                TryRunPreset(preset, $"Zurück nach mind. {awayMinutes.ToString(CultureInfo.InvariantCulture)} Min.");
+                            break;
+
+                        case TriggerType.BatteryLow:
+                            {
+                                if (!power.HasBattery || power.BatteryPercent < 0) break;
+                                double limit = TryParseMinutes(trigger.TargetName, out double pct) ? pct : 20;
+                                if (power.OnAcPower || power.BatteryPercent > limit) { _batteryLowFired.Remove(trigger); break; }
+                                // Nur einmal, bis wieder geladen wird
+                                if (_batteryLowFired.Add(trigger)) TryRunPreset(preset, $"Akku bei {power.BatteryPercent} %");
+                                break;
+                            }
                     }
                 }
             }
@@ -349,6 +410,34 @@ namespace EventFlowStudio.Services
                     Log("Ton stumm/laut umgeschaltet.");
                     break;
 
+                case ActionType.CloseProcess:
+                    CloseProcessGracefully(action.TargetPath);
+                    break;
+
+                case ActionType.SetVolume:
+                    {
+                        if (!int.TryParse((action.TargetPath ?? string.Empty).Trim().TrimEnd('%').Trim(), out int volume) || volume < 0 || volume > 100)
+                        { Log($"Lautstärke übersprungen: \"{action.TargetPath}\" ist keine Zahl von 0 bis 100."); return; }
+                        SystemActions.SetVolume(volume);
+                        Log($"Lautstärke auf {volume} % gesetzt.");
+                        break;
+                    }
+
+                case ActionType.MuteAudio:
+                case ActionType.UnmuteAudio:
+                    SystemActions.SetMute(action.Type == ActionType.MuteAudio);
+                    Log(action.Type == ActionType.MuteAudio ? "Ton stumm." : "Ton an.");
+                    break;
+
+                case ActionType.MediaControl:
+                    SystemActions.PressMediaKey(action.MediaKey);
+                    Log($"Medientaste: {LocalizationService.Instance.GetDisplayName(action.MediaKey)}");
+                    break;
+
+                case ActionType.SystemPower:
+                    Log(SystemActions.RunPowerCommand(action.SystemPowerCommand));
+                    break;
+
                 case ActionType.EnableProfile:
                 case ActionType.DisableProfile:
                     {
@@ -402,6 +491,28 @@ namespace EventFlowStudio.Services
                 catch (OperationCanceledException) { RunOnUi(() => Log($"Befehl läuft noch nach 10 Min.: {command}")); }
                 catch (Exception ex) { RunOnUi(() => Log($"Befehl-Status unbekannt: {ex.Message}")); }
             });
+        }
+
+        private void CloseProcessGracefully(string? target)
+        {
+            string name = Path.GetFileNameWithoutExtension((target ?? string.Empty).Trim().Trim('"'));
+            if (string.IsNullOrWhiteSpace(name)) { Log("Schließen übersprungen: kein Prozessname angegeben."); return; }
+
+            var processes = Process.GetProcessesByName(name).Where(p => p.Id != Environment.ProcessId).ToList();
+            if (!processes.Any()) { Log($"Kein laufender Prozess gefunden für: {name}"); return; }
+            foreach (var p in processes)
+            {
+                using (p)
+                {
+                    try
+                    {
+                        // Wie ein Klick auf X: die App kann noch speichern oder nachfragen
+                        if (p.CloseMainWindow()) Log($"Schließen angefordert: {p.ProcessName}");
+                        else Log($"{p.ProcessName} hat kein Fenster (zum Erzwingen \"Programm beenden\" nutzen).");
+                    }
+                    catch (Exception ex) { Log($"Fehler beim Schließen von {name}: {ex.Message}"); }
+                }
+            }
         }
 
         private async void HandleProcessExitCleanup(Preset preset)

@@ -45,6 +45,18 @@
                 <DataTrigger Binding="{Binding Type}" Value="ToggleMute">
                     <Setter Property="Visibility" Value="Hidden"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="MuteAudio">
+                    <Setter Property="Visibility" Value="Hidden"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="UnmuteAudio">
+                    <Setter Property="Visibility" Value="Hidden"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="MediaControl">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="SystemPower">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -59,6 +71,27 @@
                     <Setter Property="Visibility" Value="Visible"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Type}" Value="OpenUrl">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="CloseProcess">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Auswahl für Medientasten bzw. Energie-Befehle -->
+        <Style x:Key="MediaKeyComboStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="MediaControl">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SystemPowerComboStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="SystemPower">
                     <Setter Property="Visibility" Value="Visible"/>
                 </DataTrigger>
             </Style.Triggers>
@@ -113,6 +146,15 @@
                     <Setter Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Type}" Value="SessionUnlocked">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="PowerPluggedIn">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="PowerUnplugged">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="SystemResumed">
                     <Setter Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
             </Style.Triggers>
@@ -331,6 +373,10 @@
                                                             <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.ActionTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding Type}" ItemTemplate="{StaticResource EnumItemTemplate}" Margin="0,0,10,0" Padding="6"/>
 
                                                             <TextBox Grid.Column="2" Text="{Binding TargetPath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ActionPathBoxStyle}" Margin="0,0,5,0"/>
+                                                            <ComboBox Grid.Column="2" ItemsSource="{Binding DataContext.MediaKeys, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding MediaKey}"
+                                                                      ItemTemplate="{StaticResource EnumItemTemplate}" Style="{StaticResource MediaKeyComboStyle}" Margin="0,0,5,0" Padding="6"/>
+                                                            <ComboBox Grid.Column="2" ItemsSource="{Binding DataContext.SystemPowerCommands, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding SystemPowerCommand}"
+                                                                      ItemTemplate="{StaticResource EnumItemTemplate}" Style="{StaticResource SystemPowerComboStyle}" Margin="0,0,5,0" Padding="6"/>
 
                                                             <Button Grid.Column="3" Content="📁 ..." Margin="2,0" ToolTip="Datei suchen"
                                                                     Command="{Binding DataContext.BrowseFileCommand, RelativeSource={RelativeSource AncestorType=Window}}"

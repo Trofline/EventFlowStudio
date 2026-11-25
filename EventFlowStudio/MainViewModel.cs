@@ -28,6 +28,8 @@ namespace EventFlowStudio.ViewModels
         public Array TriggerTypes => Enum.GetValues(typeof(TriggerType));
         public Array ActionTypes => Enum.GetValues(typeof(ActionType));
         public Array LaunchStates => Enum.GetValues(typeof(WindowLaunchState));
+        public Array MediaKeys => Enum.GetValues(typeof(MediaKey));
+        public Array SystemPowerCommands => Enum.GetValues(typeof(SystemPowerCommand));
 
         public string[] AvailableLanguages => new[] { "Deutsch", "English" };
 
