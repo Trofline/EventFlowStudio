@@ -28,6 +28,9 @@ namespace EventFlowStudio.ViewModels
         public Array TriggerTypes => Enum.GetValues(typeof(TriggerType));
         public Array ActionTypes => Enum.GetValues(typeof(ActionType));
         public Array LaunchStates => Enum.GetValues(typeof(WindowLaunchState));
+        public Array MediaKeys => Enum.GetValues(typeof(MediaKey));
+        public Array SystemPowerCommands => Enum.GetValues(typeof(SystemPowerCommand));
+        public Array PowerPlanTypes => Enum.GetValues(typeof(PowerPlanType));
 
         public string[] AvailableLanguages => new[] { "Deutsch", "English" };
 
@@ -39,6 +42,21 @@ namespace EventFlowStudio.ViewModels
         public bool IsDirty { get => _isDirty; set { if (_isDirty != value) { _isDirty = value; OnPropertyChanged(); } } }
 
         public event Action? ToggleMainWindowRequested;
+        // Benachrichtigungen, die vor dem Anmelden des Fensters ausgelöst werden (z. B. AppStartup-Trigger),
+        // werden zwischengespeichert und beim Anmelden nachgereicht.
+        private readonly System.Collections.Generic.List<(string Title, string Message)> _pendingNotifications = new();
+        private Action<string, string>? _notificationHandler;
+        public event Action<string, string>? NotificationRequested
+        {
+            add
+            {
+                _notificationHandler += value;
+                if (value == null) return;
+                foreach (var (title, message) in _pendingNotifications) value(title, message);
+                _pendingNotifications.Clear();
+            }
+            remove => _notificationHandler -= value;
+        }
 
         public ICommand AddPresetCommand { get; }
         public ICommand DeletePresetCommand { get; }
@@ -48,6 +66,8 @@ namespace EventFlowStudio.ViewModels
         public ICommand AddActionCommand { get; }
         public ICommand DeleteActionCommand { get; }
         public ICommand BrowseFileCommand { get; }
+        public ICommand PickProcessForTriggerCommand { get; }
+        public ICommand PickProcessForActionCommand { get; }
         public ICommand TestRunCommand { get; }
         public ICommand SwitchTabCommand { get; }
         public ICommand RestartAsAdminCommand { get; }
@@ -67,14 +87,21 @@ namespace EventFlowStudio.ViewModels
             DeleteActionCommand = new RelayCommand(action => { if (action is ActionItem a) SelectedPreset?.Actions.Remove(a); MarkDirty(); });
 
             BrowseFileCommand = new RelayCommand(action => { BrowseFile(action as ActionItem); MarkDirty(); });
+            PickProcessForTriggerCommand = new RelayCommand(trig => { if (PickProcessForTrigger(trig as TriggerCondition)) MarkDirty(); });
+            PickProcessForActionCommand = new RelayCommand(action => { if (PickProcessForAction(action as ActionItem)) MarkDirty(); });
             TestRunCommand = new RelayCommand(_ => { if (SelectedPreset != null) _engine.ExecutePresetActions(SelectedPreset); });
             SwitchTabCommand = new RelayCommand(index => SelectedTabIndex = Convert.ToInt32(index));
             RestartAsAdminCommand = new RelayCommand(_ => RestartAsAdmin());
             ExportCommand = new RelayCommand(_ => ExportPresets());
             ImportCommand = new RelayCommand(_ => { ImportPresets(); MarkDirty(); });
 
-            _engine.LogMessage += msg => LogOutput = $"[{DateTime.Now:HH:mm:ss}] {msg}\n" + LogOutput;
+            _engine.LogMessage += AppendLog;
             _engine.ToggleMainWindow += () => ToggleMainWindowRequested?.Invoke();
+            _engine.NotificationRequested += (title, message) =>
+            {
+                if (_notificationHandler != null) _notificationHandler.Invoke(title, message);
+                else _pendingNotifications.Add((title, message));
+            };
 
             _engine.Initialize();
 
@@ -87,11 +114,9 @@ namespace EventFlowStudio.ViewModels
                 }
             };
 
-            Presets.CollectionChanged += (s, e) => MarkDirty();
-            foreach (var p in Presets)
-            {
-                p.PropertyChanged += (s, e) => MarkDirty();
-            }
+            // Jede Änderung an Profilen, Triggern und Aktionen (auch neu hinzugefügten) markiert "nicht gespeichert".
+            // Vorher wurden nur Name/Aktiv bereits vorhandener Profile erkannt.
+            TrackCollection(Presets);
 
             EnsureAdminState();
             EnsureAutoStart();
@@ -103,6 +128,53 @@ namespace EventFlowStudio.ViewModels
         }
 
         public void MarkDirty() => IsDirty = true;
+
+        private const int MaxLogLines = 300;
+        private readonly System.Collections.Generic.LinkedList<string> _logLines = new();
+
+        // Logs kommen auch aus Hintergrund-Threads. Sie werden auf dem UI-Thread angehängt und begrenzt,
+        // damit das Log bei tagelangem Laufen im Tray nicht endlos wächst.
+        private void AppendLog(string msg)
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                dispatcher.BeginInvoke(() => AppendLog(msg));
+                return;
+            }
+
+            _logLines.AddFirst($"[{DateTime.Now:HH:mm:ss}] {msg}");
+            while (_logLines.Count > MaxLogLines) _logLines.RemoveLast();
+            LogOutput = string.Join("\n", _logLines);
+        }
+
+        private void OnItemChanged(object? sender, PropertyChangedEventArgs e) => MarkDirty();
+
+        private void TrackCollection<T>(ObservableCollection<T> collection) where T : INotifyPropertyChanged
+        {
+            collection.CollectionChanged += (s, e) =>
+            {
+                if (e.OldItems != null) foreach (T item in e.OldItems) Untrack(item);
+                if (e.NewItems != null) foreach (T item in e.NewItems) Track(item);
+                MarkDirty();
+            };
+            foreach (var item in collection) Track(item);
+        }
+
+        private void Track(INotifyPropertyChanged item)
+        {
+            item.PropertyChanged -= OnItemChanged;
+            item.PropertyChanged += OnItemChanged;
+            if (item is Preset preset)
+            {
+                TrackCollection(preset.Triggers);
+                TrackCollection(preset.Actions);
+            }
+        }
+
+        private void Untrack(INotifyPropertyChanged item) => item.PropertyChanged -= OnItemChanged;
+
+        public void Shutdown() => _engine.Shutdown();
 
         private void ExportPresets()
         {
@@ -132,22 +204,24 @@ namespace EventFlowStudio.ViewModels
             {
                 using RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true)!;
                 string appName = "EventFlowStudio";
-                string appPath = Process.GetCurrentProcess().MainModule!.FileName;
+                string appPath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName;
 
                 if (AppSettings.AutoStartWindows) key.SetValue(appName, $"\"{appPath}\"");
                 else key.DeleteValue(appName, false);
             }
-            catch { }
+            catch (Exception ex) { _engine.Log($"Autostart konnte nicht gesetzt werden: {ex.Message}"); }
         }
 
         private void RestartAsAdmin()
         {
             try
             {
-                Process.Start(new ProcessStartInfo { FileName = Process.GetCurrentProcess().MainModule!.FileName, UseShellExecute = true, Verb = "runas" });
+                Process.Start(new ProcessStartInfo { FileName = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName, UseShellExecute = true, Verb = "runas" });
+                // Die neue Instanz wartet, bis diese hier ihre Single-Instance-Sperre freigegeben hat
+                App.ReleaseSingleInstance();
                 Environment.Exit(0);
             }
-            catch { }
+            catch (Exception ex) { _engine.Log($"Neustart als Administrator fehlgeschlagen: {ex.Message}"); }
         }
 
         private void AddNewPreset() { Presets.Add(new Preset { Name = "⚡ Neues Profil" }); SelectedPreset = Presets.Last(); }
@@ -160,11 +234,44 @@ namespace EventFlowStudio.ViewModels
             if (dialog.ShowDialog() == true) action.TargetPath = dialog.FileName;
         }
 
+        private static Window? DialogOwner => System.Windows.Application.Current?.MainWindow;
+
+        // Trigger reagieren auf den Prozessnamen (ohne .exe), daher wird nur der Name übernommen.
+        private bool PickProcessForTrigger(TriggerCondition? trigger)
+        {
+            if (trigger == null) return false;
+            var picked = ProcessPicker.ProcessPickerWindow.Pick(DialogOwner, Strings.PickProcessTriggerTitle);
+            if (picked == null) return false;
+
+            trigger.TargetName = picked.ProcessName;
+            return true;
+        }
+
+        // Aktionen brauchen den vollen Pfad (Starten) bzw. funktionieren auch über den Namen (Beenden).
+        private bool PickProcessForAction(ActionItem? action)
+        {
+            if (action == null) return false;
+            var picked = ProcessPicker.ProcessPickerWindow.Pick(DialogOwner, Strings.PickProcessActionTitle);
+            if (picked == null) return false;
+
+            if (picked.ExecutablePath != null)
+            {
+                action.TargetPath = picked.ExecutablePath;
+            }
+            else
+            {
+                // Ohne Admin-Rechte ist der Pfad mancher Prozesse nicht lesbar. Zum Beenden reicht der Name.
+                action.TargetPath = picked.ProcessName + ".exe";
+                if (action.Type == ActionType.StartProcess)
+                    System.Windows.MessageBox.Show(Strings.PickProcessNoPathWarning, Strings.AppTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            return true;
+        }
+
         public void SaveAll()
         {
             EnsureAutoStart();
-            _engine.SavePresets();
-            IsDirty = false;
+            if (_engine.SavePresets()) IsDirty = false;
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -185,5 +292,21 @@ namespace EventFlowStudio.ViewModels
         public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
             (bool)value ? Visibility.Collapsed : Visibility.Visible;
         public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotImplementedException();
+    }
+
+    // Zeigt Enum-Werte übersetzt an. Binding 0 = Wert, Binding 1 = Strings.CurrentLanguage (nur für die Aktualisierung).
+    // ConverterParameter "hint" liefert statt des Namens den Eingabe-Hinweis.
+    public class EnumTextConverter : System.Windows.Data.IMultiValueConverter
+    {
+        public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            var value = values.Length > 0 ? values[0] : null;
+            if (value == null || value == DependencyProperty.UnsetValue) return string.Empty;
+            return (parameter as string) == "hint"
+                ? LocalizationService.Instance.GetHint(value)
+                : LocalizationService.Instance.GetDisplayName(value);
+        }
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
     }
 }

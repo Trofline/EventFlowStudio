@@ -4,12 +4,14 @@
     "Name": "Standard Profil",
     "Description": "Beschreibung...",
     "IsActive": true,
-    "Trigger": {
-      "Type": "ProcessStarted",
-      "TargetName": "",
-      "HotkeyModifier": 0,
-      "HotkeyVK": 0
-    },
+    "Triggers": [
+      {
+        "Type": "ProcessStarted",
+        "TargetName": "",
+        "HotkeyModifier": 0,
+        "HotkeyVK": 0
+      }
+    ],
     "Actions": []
   }
 ]

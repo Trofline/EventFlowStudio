@@ -1,0 +1,46 @@
+name: Build and test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # .NET 8 runs the app and tests, .NET 10 SDK is needed for the .slnx solution file
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore
+        run: dotnet restore EventFlowStudio.slnx
+
+      - name: Build
+        run: dotnet build EventFlowStudio.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test EventFlowStudio.slnx --configuration Release --no-build --logger trx --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults
+
+      - name: Upload app build
+        uses: actions/upload-artifact@v4
+        with:
+          name: EventFlowStudio-Release
+          path: EventFlowStudio/bin/Release/net8.0-windows/
