@@ -17,7 +17,11 @@ namespace EventFlowStudio.ProcessPicker
     public class RunningProcessInfo : INotifyPropertyChanged
     {
         private ImageSource? _icon;
+        private bool _isChecked;
         public event PropertyChangedEventHandler? PropertyChanged;
+
+        // Haken in der Mehrfachauswahl
+        public bool IsChecked { get => _isChecked; set { if (_isChecked == value) return; _isChecked = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsChecked))); } }
 
         public string ProcessName { get; init; } = string.Empty;
         public string? ExecutablePath { get; init; }

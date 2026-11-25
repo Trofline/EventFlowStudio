@@ -51,6 +51,10 @@ namespace EventFlowStudio.Services
         private readonly HashSet<TriggerCondition> _batteryLowFired = new();
         private bool? _lastOnAcPower;
 
+        // "Apps pausieren": geschlossene Apps samt Fensterzustand, gespeichert in paused_apps.json
+        private readonly AppPauseService _pause;
+        private readonly HashSet<string> _pauseBusy = new();
+
         public event Action<string>? LogMessage;
         public event Action? ToggleMainWindow; // NEU: Event für das Fenster
         public event Action<string, string>? NotificationRequested; // Titel, Nachricht -> Tray-Benachrichtigung
@@ -78,6 +82,7 @@ namespace EventFlowStudio.Services
 
             _configFile = Path.Combine(_appDataFolder, "presets_config_v4.json");
             _settingsFile = Path.Combine(_appDataFolder, "app_settings.json");
+            _pause = new AppPauseService(_appDataFolder, msg => RunOnUi(() => Log(msg)));
         }
 
         public void Log(string message) => LogMessage?.Invoke(message);
@@ -90,6 +95,9 @@ namespace EventFlowStudio.Services
 
             LoadSettings();
             LoadPresets();
+            _pause.Load();
+            if (_pause.Sessions.Count > 0)
+                Log($"{_pause.Sessions.Sum(s => s.Apps.Count)} pausierte App(s) aus der letzten Sitzung gefunden. Sie werden gestartet, sobald das Trigger-Programm nicht mehr läuft.");
 
             LocalizationService.Instance.CurrentLanguage = Settings.Language;
 
@@ -205,6 +213,8 @@ namespace EventFlowStudio.Services
 
             if (type == TriggerType.ProcessStopped)
             {
+                CheckPausedSessions();
+
                 foreach (var preset in Presets.Where(p => p.IsActive).ToList())
                 {
                     if (!preset.Triggers.Any(t => t.Type == TriggerType.ProcessStarted && IsNameMatch(t.TargetName, targetName))) continue;
@@ -246,6 +256,9 @@ namespace EventFlowStudio.Services
             if (_lastOnAcPower.HasValue && _lastOnAcPower.Value != power.OnAcPower)
                 CheckTriggers(power.OnAcPower ? TriggerType.PowerPluggedIn : TriggerType.PowerUnplugged, power.OnAcPower ? "Netzteil" : "Akku");
             _lastOnAcPower = power.OnAcPower;
+
+            // Falls ein "Prozess beendet" verpasst wurde (oder EventFlow neu gestartet ist)
+            CheckPausedSessions();
 
             foreach (var preset in Presets.Where(p => p.IsActive).ToList())
             {
@@ -481,6 +494,14 @@ namespace EventFlowStudio.Services
                     ShowNotification(preset, action.NotificationMessage);
                     break;
 
+                case ActionType.PauseApps:
+                    PauseApps(action, preset);
+                    break;
+
+                case ActionType.RestorePausedApps:
+                    RestoreAllPausedApps();
+                    break;
+
                 default:
                     Log($"Aktion {action.Type} wird in dieser Version noch nicht ausgeführt.");
                     break;
@@ -575,6 +596,69 @@ namespace EventFlowStudio.Services
                 }
             }
             catch (Exception ex) { Log($"Fehler beim Clean-up von {preset.Name}: {ex.Message}"); }
+        }
+
+        // ---------- Apps pausieren ----------
+
+        public bool HasPausedApps => _pause.Sessions.Count > 0;
+
+        private void PauseApps(ActionItem action, Preset preset)
+        {
+            var targets = AppPauseService.ParseTargets(action.TargetPath);
+            // Wiederhergestellt wird, sobald keiner der "Prozess gestartet"-Trigger mehr läuft
+            var triggerNames = preset.Triggers.Where(t => t.Type == TriggerType.ProcessStarted && !string.IsNullOrWhiteSpace(t.TargetName))
+                                              .Select(t => t.TargetName.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            string key = action.Id;
+            if (!_pauseBusy.Add(key)) { Log("Apps pausieren läuft bereits."); return; }
+
+            RunAsyncAction(async () =>
+            {
+                try { await _pause.PauseAsync(key, preset.Name, triggerNames, targets, action.ExitDelaySeconds); }
+                finally { _pauseBusy.Remove(key); }
+                // Ist das Trigger-Programm schon wieder zu, sofort zurückholen
+                CheckPausedSessions();
+            }, ActionType.PauseApps);
+        }
+
+        /// <summary>Startet pausierte Apps wieder, deren Trigger-Programm nicht mehr läuft. Läuft auf dem UI-Thread.</summary>
+        private void CheckPausedSessions()
+        {
+            var candidates = _pause.Sessions.Where(s => s.TriggerNames.Count > 0 && !_pauseBusy.Contains(s.ActionId)).ToList();
+            if (candidates.Count == 0) return;
+
+            var running = new List<string>();
+            foreach (var p in Process.GetProcesses())
+            {
+                using (p) { try { running.Add(p.ProcessName); } catch { } }
+            }
+
+            foreach (var session in candidates)
+            {
+                if (!AppPauseService.IsSessionFinished(session, running)) continue;
+                Log($"Trigger-Programm von \"{session.PresetName}\" beendet.");
+                RestoreSession(session, ignoreDelay: false);
+            }
+        }
+
+        private void RestoreSession(PauseSession session, bool ignoreDelay)
+        {
+            string key = session.ActionId;
+            if (!_pauseBusy.Add(key)) return;
+            RunAsyncAction(async () =>
+            {
+                try { await _pause.RestoreAsync(session, ignoreDelay); }
+                finally { _pauseBusy.Remove(key); }
+            }, ActionType.RestorePausedApps);
+        }
+
+        /// <summary>Alle pausierten Apps sofort wieder starten (Aktion oder Tray-Menü).</summary>
+        public void RestoreAllPausedApps()
+        {
+            RunOnUi(() =>
+            {
+                if (_pause.Sessions.Count == 0) { Log("Keine pausierten Apps vorhanden."); return; }
+                foreach (var session in _pause.Sessions.ToList()) RestoreSession(session, ignoreDelay: true);
+            });
         }
 
         private async Task ChangePowerPlanAsync(PowerPlanType plan)

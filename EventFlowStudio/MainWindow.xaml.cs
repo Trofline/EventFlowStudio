@@ -77,6 +77,15 @@ namespace EventFlowStudio
 
                 var contextMenu = new System.Windows.Forms.ContextMenuStrip();
                 contextMenu.Items.Add("EventFlow öffnen", null, (s, e) => ShowMainWindow());
+                var restoreItem = new System.Windows.Forms.ToolStripMenuItem("Pausierte Apps wiederherstellen", null, (s, e) => (DataContext as MainViewModel)?.RestorePausedAppsNow());
+                contextMenu.Items.Add(restoreItem);
+                // Nur anklickbar, wenn gerade Apps pausiert sind
+                contextMenu.Opening += (s, e) =>
+                {
+                    var vm = DataContext as MainViewModel;
+                    restoreItem.Enabled = vm?.HasPausedApps == true;
+                    if (vm != null) restoreItem.Text = vm.Strings.TrayRestorePaused;
+                };
                 contextMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
                 contextMenu.Items.Add("Beenden", null, (s, e) => QuitApplication());
                 _notifyIcon.ContextMenuStrip = contextMenu;

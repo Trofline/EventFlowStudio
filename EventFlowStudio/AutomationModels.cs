@@ -20,7 +20,8 @@ namespace EventFlowStudio.Models
     {
         StartProcess, KillProcess, ChangePowerPlan, SendWebhook, SystemNotification,
         OpenUrl, RunCommand, LockWorkstation, ToggleMute, EnableProfile, DisableProfile,
-        CloseProcess, SetVolume, MuteAudio, UnmuteAudio, MediaControl, SystemPower
+        CloseProcess, SetVolume, MuteAudio, UnmuteAudio, MediaControl, SystemPower,
+        PauseApps, RestorePausedApps
     }
 
     public enum MediaKey { PlayPause, NextTrack, PreviousTrack, Stop, VolumeUp, VolumeDown }
