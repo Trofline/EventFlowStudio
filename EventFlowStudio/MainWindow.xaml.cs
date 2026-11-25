@@ -16,24 +16,25 @@ namespace EventFlowStudio
             SetupTrayIcon();
             if (DataContext is MainViewModel notifyVm) notifyVm.NotificationRequested += ShowTrayNotification;
 
-            this.Loaded += MainWindow_Loaded;
             this.Closing += MainWindow_Closing;
-        }
+            this.Closed += (s, e) => (DataContext as MainViewModel)?.Shutdown();
 
-        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
-        {
+            // Beim Abmelden/Herunterfahren darf das Fenster nicht in den Tray "flüchten",
+            // sonst blockiert die App das Herunterfahren von Windows.
+            System.Windows.Application.Current.SessionEnding += (s, e) => { _isActualClose = true; _notifyIcon?.Dispose(); };
+
             if (DataContext is MainViewModel vm)
             {
+                // Im Konstruktor statt in Loaded: Loaded kommt nie, wenn das Fenster versteckt startet
                 vm.ToggleMainWindowRequested += ToggleWindowVisibility;
 
-                // Verstecke die App beim Start, wenn das in den Settings steht
-                if (vm.AppSettings.StartMinimized)
-                {
-                    if (vm.AppSettings.EnableSystemTray) this.Hide();
-                    else this.WindowState = WindowState.Minimized;
-                }
+                if (vm.AppSettings.StartMinimized && !vm.AppSettings.EnableSystemTray)
+                    this.WindowState = WindowState.Minimized;
             }
         }
+
+        // Fenster beim Start gar nicht anzeigen (nur Tray-Symbol)
+        public bool StartsHiddenInTray => DataContext is MainViewModel vm && vm.AppSettings.StartMinimized && vm.AppSettings.EnableSystemTray && _notifyIcon != null;
 
         private void ToggleWindowVisibility()
         {
@@ -87,7 +88,7 @@ namespace EventFlowStudio
             }
         }
 
-        private void ShowMainWindow()
+        public void ShowMainWindow()
         {
             this.Show();
             this.WindowState = WindowState.Normal;
@@ -134,72 +135,83 @@ namespace EventFlowStudio
             {
                 e.Cancel = true;
                 this.Hide();
+                return;
             }
-            else
+
+            // Ohne Tray schließt das X die App. Vorher gingen ungespeicherte Änderungen dabei ohne Nachfrage verloren.
+            if (!_isActualClose && DataContext is MainViewModel model && model.IsDirty)
             {
-                _notifyIcon?.Dispose();
+                var result = System.Windows.MessageBox.Show(
+                    model.Strings.UnsavedWarningMessage,
+                    model.Strings.UnsavedWarningTitle,
+                    System.Windows.MessageBoxButton.YesNoCancel,
+                    System.Windows.MessageBoxImage.Warning);
+
+                if (result == System.Windows.MessageBoxResult.Cancel) { e.Cancel = true; return; }
+                if (result == System.Windows.MessageBoxResult.Yes) model.SaveAll();
             }
+
+            _notifyIcon?.Dispose();
         }
 
-        // Hotkey Einlese-Logik für Profile
+        // Liest eine Tastenkombination aus einem KeyDown-Ereignis.
+        // Rückgabe false = nur eine Modifier-Taste (weiter warten). clear = Entf/Rücktaste/Esc ohne Modifier löscht den Hotkey.
+        private static bool TryReadHotkey(System.Windows.Input.KeyEventArgs e, out string text, out uint modifiers, out uint vk, out bool clear)
+        {
+            text = string.Empty; modifiers = 0; vk = 0; clear = false;
+            var modifier = Keyboard.Modifiers;
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+
+            if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.ImeProcessed or Key.DeadCharProcessed)
+                return false;
+
+            if (modifier == ModifierKeys.None && key is Key.Back or Key.Delete or Key.Escape)
+            {
+                clear = true;
+                return true;
+            }
+
+            if (modifier.HasFlag(ModifierKeys.Control)) text += "Ctrl + ";
+            if (modifier.HasFlag(ModifierKeys.Alt)) text += "Alt + ";
+            if (modifier.HasFlag(ModifierKeys.Shift)) text += "Shift + ";
+            if (modifier.HasFlag(ModifierKeys.Windows)) text += "Win + ";
+            text += key.ToString();
+            // WPF ModifierKeys (Alt=1, Ctrl=2, Shift=4, Win=8) entsprechen den Bits im Keyboard-Hook
+            modifiers = (uint)modifier;
+            vk = (uint)KeyInterop.VirtualKeyFromKey(key);
+            return true;
+        }
+
+        // Hotkey Einlese-Logik für Profile (PreviewKeyDown, damit keine Zeichen im Feld landen)
         private void HotkeyTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
+            // Tab soll weiterhin zum nächsten Feld springen
+            if (e.Key == Key.Tab && Keyboard.Modifiers == ModifierKeys.None) return;
             e.Handled = true;
-            var modifier = System.Windows.Input.Keyboard.Modifiers;
-            var key = (e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key);
+            if (!TryReadHotkey(e, out string hotkeyText, out uint mods, out uint vk, out bool clear)) return;
 
-            if (key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl ||
-                key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt ||
-                key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
-                key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin)
-                return;
-
-            string hotkeyText = "";
-            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Control)) hotkeyText += "Ctrl + ";
-            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Alt)) hotkeyText += "Alt + ";
-            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Shift)) hotkeyText += "Shift + ";
-            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Windows)) hotkeyText += "Win + ";
-            hotkeyText += key.ToString();
-
-            if (sender is System.Windows.Controls.TextBox tb && DataContext is MainViewModel vm && vm.SelectedPreset != null)
+            if (sender is System.Windows.Controls.TextBox tb && DataContext is MainViewModel vm &&
+                tb.DataContext is EventFlowStudio.Models.TriggerCondition trigger)
             {
-                if (tb.DataContext is EventFlowStudio.Models.TriggerCondition trigger)
-                {
-                    tb.Text = hotkeyText;
-                    trigger.TargetName = hotkeyText;
-                    trigger.HotkeyModifier = (uint)modifier;
-                    trigger.HotkeyVK = (uint)KeyInterop.VirtualKeyFromKey(key);
-                    vm.MarkDirty();
-                }
+                trigger.TargetName = clear ? string.Empty : hotkeyText;
+                trigger.HotkeyModifier = mods;
+                trigger.HotkeyVK = vk;
+                vm.MarkDirty();
             }
         }
 
-        // NEU: Hotkey Einlese-Logik für die App-Settings (Fenster umschalten)
+        // Hotkey Einlese-Logik für die App-Settings (Fenster umschalten)
         private void SettingsHotkey_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
+            if (e.Key == Key.Tab && Keyboard.Modifiers == ModifierKeys.None) return;
             e.Handled = true;
-            var modifier = System.Windows.Input.Keyboard.Modifiers;
-            var key = (e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key);
+            if (!TryReadHotkey(e, out string hotkeyText, out uint mods, out uint vk, out bool clear)) return;
 
-            if (key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl ||
-                key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt ||
-                key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
-                key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin)
-                return;
-
-            string hotkeyText = "";
-            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Control)) hotkeyText += "Ctrl + ";
-            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Alt)) hotkeyText += "Alt + ";
-            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Shift)) hotkeyText += "Shift + ";
-            if (modifier.HasFlag(System.Windows.Input.ModifierKeys.Windows)) hotkeyText += "Win + ";
-            hotkeyText += key.ToString();
-
-            if (sender is System.Windows.Controls.TextBox tb && DataContext is MainViewModel vm)
+            if (DataContext is MainViewModel vm)
             {
-                tb.Text = hotkeyText;
-                vm.AppSettings.ToggleHotkeyText = hotkeyText;
-                vm.AppSettings.ToggleHotkeyModifier = (uint)modifier;
-                vm.AppSettings.ToggleHotkeyVK = (uint)KeyInterop.VirtualKeyFromKey(key);
+                vm.AppSettings.ToggleHotkeyText = clear ? string.Empty : hotkeyText;
+                vm.AppSettings.ToggleHotkeyModifier = mods;
+                vm.AppSettings.ToggleHotkeyVK = vk;
                 vm.MarkDirty();
             }
         }

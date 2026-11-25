@@ -8,9 +8,26 @@ using System.Text.Json.Serialization;
 
 namespace EventFlowStudio.Models
 {
-    public enum TriggerType { ProcessStarted, ProcessStopped, BluetoothConnected, BluetoothDisconnected, UsbDeviceConnected, GlobalHotkey, AppStartup }
-    public enum ActionType { StartProcess, KillProcess, ChangePowerPlan, SendWebhook, SystemNotification }
-    public enum WindowLaunchState { Normal = ProcessWindowStyle.Normal, Minimized = ProcessWindowStyle.Hidden, Maximized = ProcessWindowStyle.Maximized }
+    // Neue Werte immer HINTEN anhängen. Gespeichert wird zwar der Name, aber so bleiben alte Builds kompatibel.
+    public enum TriggerType
+    {
+        ProcessStarted, ProcessStopped, BluetoothConnected, BluetoothDisconnected, UsbDeviceConnected, GlobalHotkey, AppStartup,
+        UsbDeviceDisconnected, TimeOfDay, Interval, UserIdle, SessionLocked, SessionUnlocked,
+        UserReturned, ForegroundApp, NetworkConnected, NetworkDisconnected, PowerPluggedIn, PowerUnplugged, BatteryLow, SystemResumed
+    }
+
+    public enum ActionType
+    {
+        StartProcess, KillProcess, ChangePowerPlan, SendWebhook, SystemNotification,
+        OpenUrl, RunCommand, LockWorkstation, ToggleMute, EnableProfile, DisableProfile,
+        CloseProcess, SetVolume, MuteAudio, UnmuteAudio, MediaControl, SystemPower
+    }
+
+    public enum MediaKey { PlayPause, NextTrack, PreviousTrack, Stop, VolumeUp, VolumeDown }
+    public enum SystemPowerCommand { MonitorOff, Sleep, Hibernate, SignOut, Shutdown, Restart }
+
+    // Minimized zeigte früher auf ProcessWindowStyle.Hidden, dadurch war das Fenster unsichtbar statt minimiert.
+    public enum WindowLaunchState { Normal = ProcessWindowStyle.Normal, Minimized = ProcessWindowStyle.Minimized, Maximized = ProcessWindowStyle.Maximized, Hidden = ProcessWindowStyle.Hidden }
     public enum PowerPlanType { Balanced, HighPerformance, PowerSaver }
 
     // Basisklasse, die alle falschen "Wurde geändert"-Alarme verhindert
@@ -83,6 +100,8 @@ namespace EventFlowStudio.Models
         private PowerPlanType _powerPlan = PowerPlanType.HighPerformance;
         private string _webhookUrl = "https://";
         private string _notificationMessage = "Aktion ausgeführt.";
+        private MediaKey _mediaKey = MediaKey.PlayPause;
+        private SystemPowerCommand _systemPowerCommand = SystemPowerCommand.Sleep;
 
         public string Id { get; set; } = Guid.NewGuid().ToString();
 
@@ -98,6 +117,8 @@ namespace EventFlowStudio.Models
         public PowerPlanType PowerPlan { get => _powerPlan; set => SetProperty(ref _powerPlan, value); }
         public string WebhookUrl { get => _webhookUrl; set => SetProperty(ref _webhookUrl, value); }
         public string NotificationMessage { get => _notificationMessage; set => SetProperty(ref _notificationMessage, value); }
+        public MediaKey MediaKey { get => _mediaKey; set => SetProperty(ref _mediaKey, value); }
+        public SystemPowerCommand SystemPowerCommand { get => _systemPowerCommand; set => SetProperty(ref _systemPowerCommand, value); }
 
         [JsonIgnore]
         public int? LaunchedProcessId { get; set; }
@@ -108,11 +129,25 @@ namespace EventFlowStudio.Models
         private string _name = "Neues Profil";
         private string _description = "Beschreibung...";
         private bool _isActive = true;
+        private int _cooldownSeconds = 0;
 
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public string Name { get => _name; set => SetProperty(ref _name, value); }
         public string Description { get => _description; set => SetProperty(ref _description, value); }
         public bool IsActive { get => _isActive; set => SetProperty(ref _isActive, value); }
+
+        // Mindestabstand zwischen zwei Ausführungen dieses Profils (0 = aus)
+        public int CooldownSeconds { get => _cooldownSeconds; set => SetProperty(ref _cooldownSeconds, Math.Max(0, value)); }
+
+        // Alte Konfigurationen (vor "Triggers") hatten genau einen "Trigger". Der wird beim Laden übernommen
+        // und nie wieder geschrieben.
+        [JsonPropertyName("Trigger")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public TriggerCondition? LegacyTrigger
+        {
+            get => null;
+            set { if (value != null) Triggers.Add(value); }
+        }
 
         public ObservableCollection<TriggerCondition> Triggers { get; set; } = new ObservableCollection<TriggerCondition>();
         public ObservableCollection<ActionItem> Actions { get; set; } = new ObservableCollection<ActionItem>();
