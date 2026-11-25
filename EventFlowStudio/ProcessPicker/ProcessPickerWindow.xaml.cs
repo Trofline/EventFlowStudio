@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -19,6 +19,12 @@ namespace EventFlowStudio.ProcessPicker
         private ICollectionView? _view;
 
         public RunningProcessInfo? SelectedProcess { get; private set; }
+
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            DarkTitleBar.Apply(this);
+        }
 
         public ProcessPickerWindow(string? header = null, bool showAllProcesses = false)
         {

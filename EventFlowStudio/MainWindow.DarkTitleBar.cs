@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 
@@ -8,6 +8,16 @@ namespace EventFlowStudio
     // Funktioniert ab Windows 10 20H1 und Windows 11; ältere Versionen ignorieren den Aufruf.
     public partial class MainWindow
     {
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            DarkTitleBar.Apply(this);
+        }
+    }
+
+    // Auch von anderen Fenstern (z.B. Prozess-Auswahl) genutzt
+    public static class DarkTitleBar
+    {
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
@@ -15,13 +25,11 @@ namespace EventFlowStudio
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
         private const int DWMWA_CAPTION_COLOR = 35;
 
-        protected override void OnSourceInitialized(EventArgs e)
+        public static void Apply(System.Windows.Window window)
         {
-            base.OnSourceInitialized(e);
-
             try
             {
-                IntPtr hwnd = new WindowInteropHelper(this).Handle;
+                IntPtr hwnd = new WindowInteropHelper(window).Handle;
                 int enabled = 1;
                 if (DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref enabled, sizeof(int)) != 0)
                     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, ref enabled, sizeof(int));
