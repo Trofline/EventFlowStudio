@@ -28,6 +28,7 @@ namespace EventFlowStudio.Services
 
         private readonly string _appDataFolder;
         private readonly string _configFile;
+        private readonly object _saveLock = new();
         private readonly string _settingsFile;
 
         public ObservableCollection<Preset> Presets { get; set; } = new ObservableCollection<Preset>();
@@ -707,6 +708,7 @@ namespace EventFlowStudio.Services
 
         public bool SavePresets()
         {
+            lock (_saveLock)
             try
             {
                 WriteFileAtomic(_configFile, JsonSerializer.Serialize(Presets, GetJsonOptions()));
@@ -718,6 +720,42 @@ namespace EventFlowStudio.Services
             {
                 Log($"Speichern fehlgeschlagen: {ex.Message}");
                 return false;
+            }
+        }
+
+        // Speichert nur den An/Aus-Zustand eines Profils, ohne andere ungespeicherte Änderungen
+        // (z.B. halb bearbeitete Trigger) mit auf die Platte zu schreiben. Dazu wird die gespeicherte
+        // Datei gelesen, nur "IsActive" des passenden Profils geändert und zurückgeschrieben.
+        // Gibt false zurück, wenn das Profil noch nie gespeichert wurde (dann gibt es nichts zu patchen).
+        public bool SavePresetActiveState(Preset preset)
+        {
+            lock (_saveLock)
+            {
+                try
+                {
+                    if (!File.Exists(_configFile)) return false;
+                    if (System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_configFile)) is not System.Text.Json.Nodes.JsonArray list) return false;
+
+                    bool found = false;
+                    foreach (var node in list)
+                    {
+                        if (node is System.Text.Json.Nodes.JsonObject obj && (string?)obj["Id"] == preset.Id)
+                        {
+                            obj["IsActive"] = preset.IsActive;
+                            found = true;
+                        }
+                    }
+                    if (!found) return false;
+
+                    WriteFileAtomic(_configFile, list.ToJsonString(GetJsonOptions()));
+                    Log($"Profil \"{preset.Name}\" {(preset.IsActive ? "aktiviert" : "deaktiviert")} (gespeichert).");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Log($"Speichern des Profil-Status fehlgeschlagen: {ex.Message}");
+                    return false;
+                }
             }
         }
 
