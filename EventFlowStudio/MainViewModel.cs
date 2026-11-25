@@ -28,6 +28,7 @@ namespace EventFlowStudio.ViewModels
         public Array TriggerTypes => Enum.GetValues(typeof(TriggerType));
         public Array ActionTypes => Enum.GetValues(typeof(ActionType));
         public Array LaunchStates => Enum.GetValues(typeof(WindowLaunchState));
+        public Array PowerPlanTypes => Enum.GetValues(typeof(PowerPlanType));
 
         public string[] AvailableLanguages => new[] { "Deutsch", "English" };
 
@@ -39,6 +40,21 @@ namespace EventFlowStudio.ViewModels
         public bool IsDirty { get => _isDirty; set { if (_isDirty != value) { _isDirty = value; OnPropertyChanged(); } } }
 
         public event Action? ToggleMainWindowRequested;
+        // Benachrichtigungen, die vor dem Anmelden des Fensters ausgelöst werden (z. B. AppStartup-Trigger),
+        // werden zwischengespeichert und beim Anmelden nachgereicht.
+        private readonly System.Collections.Generic.List<(string Title, string Message)> _pendingNotifications = new();
+        private Action<string, string>? _notificationHandler;
+        public event Action<string, string>? NotificationRequested
+        {
+            add
+            {
+                _notificationHandler += value;
+                if (value == null) return;
+                foreach (var (title, message) in _pendingNotifications) value(title, message);
+                _pendingNotifications.Clear();
+            }
+            remove => _notificationHandler -= value;
+        }
 
         public ICommand AddPresetCommand { get; }
         public ICommand DeletePresetCommand { get; }
@@ -75,6 +91,11 @@ namespace EventFlowStudio.ViewModels
 
             _engine.LogMessage += msg => LogOutput = $"[{DateTime.Now:HH:mm:ss}] {msg}\n" + LogOutput;
             _engine.ToggleMainWindow += () => ToggleMainWindowRequested?.Invoke();
+            _engine.NotificationRequested += (title, message) =>
+            {
+                if (_notificationHandler != null) _notificationHandler.Invoke(title, message);
+                else _pendingNotifications.Add((title, message));
+            };
 
             _engine.Initialize();
 
