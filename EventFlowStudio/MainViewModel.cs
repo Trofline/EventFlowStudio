@@ -29,6 +29,9 @@ namespace EventFlowStudio.ViewModels
         public Array ActionTypes => Enum.GetValues(typeof(ActionType));
         public Array LaunchStates => Enum.GetValues(typeof(WindowLaunchState));
         public Array PowerPlanTypes => Enum.GetValues(typeof(PowerPlanType));
+        public Array AudioCommands => Enum.GetValues(typeof(AudioCommand));
+        public Array MediaKeys => Enum.GetValues(typeof(MediaKey));
+        public Array SystemPowerCommands => Enum.GetValues(typeof(SystemPowerCommand));
 
         public string[] AvailableLanguages => new[] { "Deutsch", "English" };
 
@@ -89,7 +92,7 @@ namespace EventFlowStudio.ViewModels
             ExportCommand = new RelayCommand(_ => ExportPresets());
             ImportCommand = new RelayCommand(_ => { ImportPresets(); MarkDirty(); });
 
-            _engine.LogMessage += msg => LogOutput = $"[{DateTime.Now:HH:mm:ss}] {msg}\n" + LogOutput;
+            _engine.LogMessage += AppendLog;
             _engine.ToggleMainWindow += () => ToggleMainWindowRequested?.Invoke();
             _engine.NotificationRequested += (title, message) =>
             {
@@ -108,11 +111,9 @@ namespace EventFlowStudio.ViewModels
                 }
             };
 
-            Presets.CollectionChanged += (s, e) => MarkDirty();
-            foreach (var p in Presets)
-            {
-                p.PropertyChanged += (s, e) => MarkDirty();
-            }
+            // Änderungen an Profilen, Triggern und Aktionen (auch neu hinzugefügten) als ungespeichert markieren
+            Presets.CollectionChanged += OnTrackedCollectionChanged;
+            foreach (var p in Presets) Track(p);
 
             EnsureAdminState();
             EnsureAutoStart();
@@ -124,6 +125,49 @@ namespace EventFlowStudio.ViewModels
         }
 
         public void MarkDirty() => IsDirty = true;
+
+        public void Shutdown() => _engine.Shutdown();
+
+        private const int MaxLogLines = 300;
+        private readonly object _logLock = new();
+
+        // Das Log wächst sonst über Tage unbegrenzt und wird bei jeder Zeile komplett neu gezeichnet
+        private void AppendLog(string msg)
+        {
+            lock (_logLock)
+            {
+                string text = $"[{DateTime.Now:HH:mm:ss}] {msg}\n" + _logOutput;
+                int idx = -1;
+                for (int i = 0; i < MaxLogLines; i++) { idx = text.IndexOf('\n', idx + 1); if (idx < 0) break; }
+                if (idx >= 0 && idx < text.Length - 1) text = text.Substring(0, idx + 1);
+                LogOutput = text;
+            }
+        }
+
+        private void Track(object? item)
+        {
+            switch (item)
+            {
+                case Preset p:
+                    p.PropertyChanged -= OnTrackedPropertyChanged; p.PropertyChanged += OnTrackedPropertyChanged;
+                    p.Triggers.CollectionChanged -= OnTrackedCollectionChanged; p.Triggers.CollectionChanged += OnTrackedCollectionChanged;
+                    p.Actions.CollectionChanged -= OnTrackedCollectionChanged; p.Actions.CollectionChanged += OnTrackedCollectionChanged;
+                    foreach (var t in p.Triggers) Track(t);
+                    foreach (var a in p.Actions) Track(a);
+                    break;
+                case INotifyPropertyChanged npc:
+                    npc.PropertyChanged -= OnTrackedPropertyChanged; npc.PropertyChanged += OnTrackedPropertyChanged;
+                    break;
+            }
+        }
+
+        private void OnTrackedPropertyChanged(object? sender, PropertyChangedEventArgs e) => MarkDirty();
+
+        private void OnTrackedCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            if (e.NewItems != null) foreach (var item in e.NewItems) Track(item);
+            MarkDirty();
+        }
 
         private void ExportPresets()
         {
@@ -199,6 +243,27 @@ namespace EventFlowStudio.ViewModels
         public bool CanExecute(object? parameter) => true;
         public void Execute(object? parameter) => _execute(parameter);
         public event EventHandler? CanExecuteChanged { add { } remove { } }
+    }
+
+    /// <summary>
+    /// Übersetzt Enum-Werte und Hinweise. values[0] = Wert, values[1] = aktuelle Sprache (nur damit die Anzeige beim Sprachwechsel neu lädt).
+    /// ConverterParameter: "name" (Standard), "triggerHint" oder "actionHint".
+    /// </summary>
+    public class LocalizedTextConverter : System.Windows.Data.IMultiValueConverter
+    {
+        public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            var value = values.Length > 0 ? values[0] : null;
+            if (value == DependencyProperty.UnsetValue) return string.Empty;
+            var loc = LocalizationService.Instance;
+            return (parameter as string) switch
+            {
+                "triggerHint" => loc.TriggerHint(value),
+                "actionHint" => loc.ActionHint(value),
+                _ => loc.DisplayName(value),
+            };
+        }
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
     }
 
     public class InverseBooleanToVisibilityConverter : System.Windows.Data.IValueConverter

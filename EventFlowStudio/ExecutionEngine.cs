@@ -8,8 +8,10 @@ using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using EventFlowStudio.Models;
+using Microsoft.Win32;
 
 namespace EventFlowStudio.Services
 {
@@ -26,6 +28,7 @@ namespace EventFlowStudio.Services
         private readonly SystemMonitorService _monitor = new SystemMonitorService();
         private GlobalKeyboardHook? _keyboardHook;
         private GithubUpdater? _updater;
+        private SynchronizationContext? _uiContext;
 
         public event Action<string>? LogMessage;
         public event Action? ToggleMainWindow; // NEU: Event für das Fenster
@@ -54,6 +57,9 @@ namespace EventFlowStudio.Services
 
         public void Initialize()
         {
+            // Alle Trigger werden auf dem UI-Thread ausgewertet. So ändert niemand die Profile, während wir sie durchlaufen.
+            _uiContext = SynchronizationContext.Current;
+
             LoadSettings();
             LoadPresets();
 
@@ -64,16 +70,76 @@ namespace EventFlowStudio.Services
 
             _keyboardHook = new GlobalKeyboardHook(OnGlobalKeyPressed);
 
-            _monitor.ProcessStarted += name => CheckTriggers(TriggerType.ProcessStarted, name);
-            _monitor.ProcessStopped += name => CheckTriggers(TriggerType.ProcessStopped, name);
-            _monitor.BluetoothConnected += name => CheckTriggers(TriggerType.BluetoothConnected, name);
-            _monitor.BluetoothDisconnected += name => CheckTriggers(TriggerType.BluetoothDisconnected, name);
-            _monitor.UsbConnected += name => CheckTriggers(TriggerType.UsbDeviceConnected, name);
+            _monitor.ProcessStarted += name => Post(() => CheckTriggers(TriggerType.ProcessStarted, name));
+            _monitor.ProcessStopped += name => Post(() => CheckTriggers(TriggerType.ProcessStopped, name));
+            _monitor.BluetoothConnected += name => Post(() => CheckTriggers(TriggerType.BluetoothConnected, name));
+            _monitor.BluetoothDisconnected += name => Post(() => CheckTriggers(TriggerType.BluetoothDisconnected, name));
+            _monitor.UsbConnected += name => Post(() => CheckTriggers(TriggerType.UsbDeviceConnected, name));
+            _monitor.UsbDisconnected += name => Post(() => CheckTriggers(TriggerType.UsbDeviceDisconnected, name));
+            _monitor.ForegroundAppChanged += name => Post(() => CheckTriggers(TriggerType.ForegroundApp, name));
+            _monitor.NetworkConnected += name => Post(() => CheckTriggers(TriggerType.NetworkConnected, name));
+            _monitor.NetworkDisconnected += name => Post(() => CheckTriggers(TriggerType.NetworkDisconnected, name));
+            _monitor.PowerSourceChanged += onAc => Post(() => CheckTriggers(onAc ? TriggerType.PowerPluggedIn : TriggerType.PowerUnplugged, onAc ? "Netzteil" : "Akku"));
+            _monitor.StatusUpdated += status => Post(() => OnStatusUpdated(status));
 
+            SystemEvents.SessionSwitch += OnSessionSwitch;
+            SystemEvents.PowerModeChanged += OnPowerModeChanged;
+
+            RefreshUsedTriggerTypes();
             _monitor.StartMonitoring();
             Log("EventFlow Engine gestartet.");
 
             CheckTriggers(TriggerType.AppStartup, "EventFlow");
+        }
+
+        public void Shutdown()
+        {
+            _monitor.StopMonitoring();
+            SystemEvents.SessionSwitch -= OnSessionSwitch;
+            SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+            _keyboardHook?.Dispose();
+        }
+
+        private void Post(Action action)
+        {
+            void Run() { try { action(); } catch (Exception ex) { Log($"Fehler bei der Trigger-Auswertung: {ex.Message}"); } }
+            if (_uiContext != null) _uiContext.Post(_ => Run(), null);
+            else Run();
+        }
+
+        private void OnSessionSwitch(object? sender, SessionSwitchEventArgs e)
+        {
+            if (e.Reason == SessionSwitchReason.SessionLock) Post(() => CheckTriggers(TriggerType.SessionLocked, "Sperren"));
+            else if (e.Reason == SessionSwitchReason.SessionUnlock) Post(() => CheckTriggers(TriggerType.SessionUnlocked, "Entsperren"));
+        }
+
+        private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode == PowerModes.Resume) Post(() => CheckTriggers(TriggerType.SystemResumed, "Aufwachen"));
+        }
+
+        // Läuft alle 1,5 Sek. auf dem UI-Thread: wertet Uhrzeit, Intervall, Leerlauf und Akku aus
+        private void OnStatusUpdated(SystemStatus status)
+        {
+            RefreshUsedTriggerTypes();
+            var now = DateTime.Now;
+            foreach (var preset in Presets.Where(p => p.IsActive).ToList())
+            {
+                foreach (var trigger in preset.Triggers.Where(t => TriggerEvaluator.IsPolled(t.Type)).ToList())
+                {
+                    if (TriggerEvaluator.ShouldFire(trigger, now, status))
+                    {
+                        Log($"Trigger ausgelöst [{trigger.Type} {trigger.TargetName}] für Profil: {preset.Name}");
+                        ExecutePresetActions(preset);
+                    }
+                }
+            }
+        }
+
+        // Der Monitor fragt WMI/WLAN nur ab, wenn ein aktives Profil den passenden Trigger nutzt
+        private void RefreshUsedTriggerTypes()
+        {
+            _monitor.UsedTriggerTypes = Presets.Where(p => p.IsActive).SelectMany(p => p.Triggers).Select(t => t.Type).ToHashSet();
         }
 
         private void OnGlobalKeyPressed(uint modifiers, uint vkCode)
@@ -84,14 +150,15 @@ namespace EventFlowStudio.Services
                 ToggleMainWindow?.Invoke();
             }
 
-            foreach (var preset in Presets.Where(p => p.IsActive))
+            foreach (var preset in Presets.Where(p => p.IsActive).ToList())
             {
-                foreach (var trigger in preset.Triggers.Where(t => t.Type == TriggerType.GlobalHotkey))
+                foreach (var trigger in preset.Triggers.Where(t => t.Type == TriggerType.GlobalHotkey).ToList())
                 {
                     if (trigger.HotkeyModifier == modifiers && trigger.HotkeyVK == vkCode)
                     {
                         Log($"Globaler Hotkey gedrückt! Starte Profil: {preset.Name}");
-                        ExecutePresetActions(preset);
+                        // Nicht direkt im Tastatur-Hook arbeiten: Windows entfernt Hooks, die zu lange brauchen
+                        Post(() => ExecutePresetActions(preset));
                     }
                 }
             }
@@ -99,11 +166,11 @@ namespace EventFlowStudio.Services
 
         private void CheckTriggers(TriggerType type, string targetName)
         {
-            foreach (var preset in Presets.Where(p => p.IsActive))
+            foreach (var preset in Presets.Where(p => p.IsActive).ToList())
             {
-                foreach (var trigger in preset.Triggers.Where(t => t.Type == type))
+                foreach (var trigger in preset.Triggers.Where(t => t.Type == type).ToList())
                 {
-                    if (type == TriggerType.AppStartup || IsNameMatch(trigger.TargetName, targetName))
+                    if (IsTriggerMatch(trigger, targetName))
                     {
                         Log($"Trigger ausgelöst [{type} -> {targetName}] für Profil: {preset.Name}");
                         ExecutePresetActions(preset);
@@ -113,9 +180,9 @@ namespace EventFlowStudio.Services
 
             if (type == TriggerType.ProcessStopped)
             {
-                foreach (var preset in Presets.Where(p => p.IsActive))
+                foreach (var preset in Presets.Where(p => p.IsActive).ToList())
                 {
-                    foreach (var trigger in preset.Triggers.Where(t => t.Type == TriggerType.ProcessStarted))
+                    foreach (var trigger in preset.Triggers.Where(t => t.Type == TriggerType.ProcessStarted).ToList())
                     {
                         if (IsNameMatch(trigger.TargetName, targetName))
                         {
@@ -127,7 +194,16 @@ namespace EventFlowStudio.Services
             }
         }
 
-        private bool IsNameMatch(string triggerTarget, string actualTarget)
+        private static bool IsTriggerMatch(TriggerCondition trigger, string actual) => trigger.Type switch
+        {
+            // Ereignisse ohne Namen: jeder Trigger dieses Typs passt
+            TriggerType.AppStartup or TriggerType.PowerPluggedIn or TriggerType.PowerUnplugged or
+            TriggerType.SessionLocked or TriggerType.SessionUnlocked or TriggerType.SystemResumed => true,
+            TriggerType.NetworkConnected or TriggerType.NetworkDisconnected => TriggerEvaluator.IsNetworkMatch(trigger.TargetName, actual),
+            _ => IsNameMatch(trigger.TargetName, actual),
+        };
+
+        public static bool IsNameMatch(string triggerTarget, string actualTarget)
         {
             if (string.IsNullOrWhiteSpace(triggerTarget) || string.IsNullOrWhiteSpace(actualTarget)) return false;
             return actualTarget.Equals(triggerTarget, StringComparison.OrdinalIgnoreCase) ||
@@ -136,15 +212,18 @@ namespace EventFlowStudio.Services
 
         public async void ExecutePresetActions(Preset preset)
         {
-            foreach (var action in preset.Actions.Where(a => a.IsEnabled))
+            // Kopie der Liste: der Nutzer darf Aktionen bearbeiten, während eine Verzögerung läuft
+            foreach (var action in preset.Actions.Where(a => a.IsEnabled).ToList())
             {
-                if (action.DelaySeconds > 0) await Task.Delay(action.DelaySeconds * 1000);
+                try { if (action.DelaySeconds > 0) await Task.Delay(TimeSpan.FromSeconds(action.DelaySeconds)); }
+                catch (ArgumentOutOfRangeException) { }
 
                 try
                 {
                     if (action.Type == ActionType.StartProcess)
                     {
-                        var psi = new ProcessStartInfo { FileName = action.TargetPath, Arguments = action.Arguments, UseShellExecute = true, WindowStyle = (ProcessWindowStyle)action.LaunchState };
+                        if (string.IsNullOrWhiteSpace(action.TargetPath)) { Log("Programm starten übersprungen: kein Pfad angegeben."); continue; }
+                        var psi = new ProcessStartInfo { FileName = action.TargetPath.Trim().Trim('"'), Arguments = action.Arguments, UseShellExecute = true, WindowStyle = (ProcessWindowStyle)action.LaunchState };
                         if (action.RunAsAdmin) psi.Verb = "runas";
 
                         var proc = Process.Start(psi);
@@ -154,6 +233,12 @@ namespace EventFlowStudio.Services
                     else if (action.Type == ActionType.ChangePowerPlan) await ChangePowerPlanAsync(action.PowerPlan);
                     else if (action.Type == ActionType.SendWebhook) await SendWebhookAsync(action.WebhookUrl, preset);
                     else if (action.Type == ActionType.SystemNotification) ShowNotification(preset, action.NotificationMessage);
+                    else if (action.Type == ActionType.OpenUrl) OpenUrl(action.TargetPath);
+                    else if (action.Type == ActionType.RunCommand) await RunCommandAsync(action);
+                    else if (action.Type == ActionType.CloseProcess) CloseProcessGracefully(action.TargetPath);
+                    else if (action.Type == ActionType.AudioControl) Log(SystemActions.RunAudioCommand(action.AudioCommand, action.VolumePercent));
+                    else if (action.Type == ActionType.MediaControl) { SystemActions.PressMediaKey(action.MediaKey); Log($"Medientaste: {action.MediaKey}"); }
+                    else if (action.Type == ActionType.SystemPower) Log(SystemActions.RunPowerCommand(action.SystemPowerCommand));
                 }
                 catch (Exception ex) { Log($"Fehler bei Aktion: {ex.Message}"); }
             }
@@ -163,7 +248,7 @@ namespace EventFlowStudio.Services
         {
             // Clean-up betrifft nur Prozess-Aktionen (Energieplan/Webhook/Benachrichtigung haben keinen Prozess)
             foreach (var action in preset.Actions.Where(a => a.IsEnabled && a.TerminateOnTriggerProcessExit &&
-                                                             (a.Type == ActionType.StartProcess || a.Type == ActionType.KillProcess)))
+                                                             (a.Type == ActionType.StartProcess || a.Type == ActionType.KillProcess)).ToList())
             {
                 if (action.ExitDelaySeconds > 0)
                 {
@@ -250,16 +335,118 @@ namespace EventFlowStudio.Services
             Log($"Benachrichtigung angezeigt: {text}");
         }
 
+        private void OpenUrl(string target)
+        {
+            string url = target?.Trim() ?? string.Empty;
+            if (url.Length == 0) { Log("URL öffnen übersprungen: keine Adresse angegeben."); return; }
+            // "example.com" ohne Schema als Webseite behandeln
+            if (!url.Contains(':') && !File.Exists(url) && !Directory.Exists(url) && url.Contains('.')) url = "https://" + url;
+            using (Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true })) { }
+            Log($"Geöffnet: {url}");
+        }
+
+        private async Task RunCommandAsync(ActionItem action)
+        {
+            string command = action.TargetPath?.Trim() ?? string.Empty;
+            if (command.Length == 0) { Log("Befehl übersprungen: kein Befehl angegeben."); return; }
+
+            // -EncodedCommand umgeht alle Probleme mit Anführungszeichen im Befehl
+            string encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(command));
+            var psi = new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encoded}",
+                WindowStyle = ProcessWindowStyle.Hidden,
+                CreateNoWindow = true,
+            };
+
+            if (action.RunAsAdmin)
+            {
+                // "runas" geht nur mit ShellExecute, dann ohne Ausgabe
+                psi.UseShellExecute = true;
+                psi.Verb = "runas";
+                using (Process.Start(psi)) { }
+                Log($"Befehl als Admin gestartet: {Shorten(command)}");
+                return;
+            }
+
+            psi.UseShellExecute = false;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            using var proc = Process.Start(psi);
+            if (proc == null) { Log("Befehl konnte nicht gestartet werden."); return; }
+
+            var outTask = proc.StandardOutput.ReadToEndAsync();
+            var errTask = proc.StandardError.ReadToEndAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            try { await proc.WaitForExitAsync(cts.Token); }
+            catch (OperationCanceledException)
+            {
+                Log($"Befehl läuft länger als 60 Sek., die nächsten Aktionen starten trotzdem: {Shorten(command)}");
+                return;
+            }
+
+            string output = ((await outTask) + " " + (await errTask)).Trim();
+            if (proc.ExitCode == 0) Log($"Befehl ausgeführt: {Shorten(command)}{(output.Length > 0 ? " -> " + Shorten(output) : "")}");
+            else Log($"Befehl fehlgeschlagen (Code {proc.ExitCode}): {Shorten(command)} {Shorten(output)}".Trim());
+        }
+
+        private static string Shorten(string text)
+        {
+            string oneLine = text.Replace("\r", " ").Replace("\n", " ").Trim();
+            return oneLine.Length <= 120 ? oneLine : oneLine.Substring(0, 117) + "...";
+        }
+
+        private void CloseProcessGracefully(string target)
+        {
+            var processes = FindProcesses(target);
+            if (processes.Count == 0) { Log($"Schließen: kein laufender Prozess für \"{target}\" gefunden."); return; }
+            foreach (var p in processes)
+            {
+                using (p)
+                {
+                    try
+                    {
+                        // Wie ein Klick auf X: die App kann noch speichern oder nachfragen
+                        if (p.CloseMainWindow()) Log($"Schließen angefordert: {p.ProcessName}");
+                        else Log($"{p.ProcessName} hat kein Fenster zum Schließen (nutze \"Prozess beenden\" zum Erzwingen).");
+                    }
+                    catch (Exception ex) { Log($"Fehler beim Schließen von {p.ProcessName}: {ex.Message}"); }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sucht Prozesse nach Pfad oder Name. Leere Eingaben liefern NIE Treffer
+        /// (vorher passte ein leerer Name auf jeden Prozess und "Prozess beenden" hätte alles beendet).
+        /// </summary>
+        private static List<Process> FindProcesses(string target)
+        {
+            string exactName = Path.GetFileNameWithoutExtension(target?.Trim().Trim('"') ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(exactName)) return new List<Process>();
+
+            var processes = Process.GetProcessesByName(exactName).ToList();
+            if (processes.Any()) return processes;
+
+            string needle = exactName.Replace(" ", "");
+            var result = new List<Process>();
+            foreach (var p in Process.GetProcesses())
+            {
+                if (p.Id != Environment.ProcessId && p.ProcessName.Contains(needle, StringComparison.OrdinalIgnoreCase)) result.Add(p);
+                else p.Dispose();
+            }
+            return result;
+        }
+
         private void KillProcessByNameOrPath(string targetPath)
         {
             try
             {
-                string exactName = Path.GetFileNameWithoutExtension(targetPath);
-                var processes = Process.GetProcessesByName(exactName).ToList();
-                if (!processes.Any()) processes = Process.GetProcesses().Where(p => p.ProcessName.ToLower().Contains(exactName.Replace(" ", "").ToLower())).ToList();
-                foreach (var p in processes) { AggressiveKill(p); Log($"Beendet (Smart-Kill): {p.ProcessName}"); }
+                var processes = FindProcesses(targetPath);
+                if (processes.Count == 0) { Log($"Beenden: kein laufender Prozess für \"{targetPath}\" gefunden."); return; }
+                foreach (var p in processes) { using (p) { string name = p.ProcessName; AggressiveKill(p); Log($"Beendet (Smart-Kill): {name}"); } }
             }
-            catch { }
+            catch (Exception ex) { Log($"Fehler beim Beenden von {targetPath}: {ex.Message}"); }
         }
 
         private void AggressiveKill(Process p)

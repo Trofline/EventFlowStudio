@@ -97,29 +97,28 @@ namespace EventFlowStudio
 
         private void QuitApplication()
         {
+            if (!ConfirmUnsavedChanges()) return;
+
             _isActualClose = true;
-
-            if (DataContext is MainViewModel vm && vm.IsDirty)
-            {
-                var result = System.Windows.MessageBox.Show(
-                    vm.Strings.UnsavedWarningMessage,
-                    vm.Strings.UnsavedWarningTitle,
-                    System.Windows.MessageBoxButton.YesNoCancel,
-                    System.Windows.MessageBoxImage.Warning);
-
-                if (result == System.Windows.MessageBoxResult.Yes)
-                {
-                    vm.SaveAll();
-                }
-                else if (result == System.Windows.MessageBoxResult.Cancel)
-                {
-                    _isActualClose = false;
-                    return;
-                }
-            }
-
             _notifyIcon?.Dispose();
+            (DataContext as MainViewModel)?.Shutdown();
             System.Windows.Application.Current.Shutdown();
+        }
+
+        /// <summary>Fragt bei ungespeicherten Änderungen nach. false = Abbrechen gewählt.</summary>
+        private bool ConfirmUnsavedChanges()
+        {
+            if (DataContext is not MainViewModel vm || !vm.IsDirty) return true;
+
+            var result = System.Windows.MessageBox.Show(
+                vm.Strings.UnsavedWarningMessage,
+                vm.Strings.UnsavedWarningTitle,
+                System.Windows.MessageBoxButton.YesNoCancel,
+                System.Windows.MessageBoxImage.Warning);
+
+            if (result == System.Windows.MessageBoxResult.Cancel) return false;
+            if (result == System.Windows.MessageBoxResult.Yes) vm.SaveAll();
+            return true;
         }
 
         private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -130,15 +129,20 @@ namespace EventFlowStudio
                 trayEnabled = vm.AppSettings.EnableSystemTray;
             }
 
-            if (!_isActualClose && trayEnabled)
+            if (_isActualClose) return;
+
+            if (trayEnabled)
             {
                 e.Cancel = true;
                 this.Hide();
+                return;
             }
-            else
-            {
-                _notifyIcon?.Dispose();
-            }
+
+            // Ohne Tray beendet das X die App: vorher wie beim Beenden über das Tray-Menü nach ungespeicherten Änderungen fragen
+            if (!ConfirmUnsavedChanges()) { e.Cancel = true; return; }
+            _isActualClose = true;
+            _notifyIcon?.Dispose();
+            (DataContext as MainViewModel)?.Shutdown();
         }
 
         // Hotkey Einlese-Logik für Profile
