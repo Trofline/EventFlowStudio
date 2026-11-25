@@ -173,9 +173,19 @@ namespace EventFlowStudio.Services
             Models.ActionType.SetVolume => De ? "Lautstärke in Prozent, z.B. 30" : "Volume in percent, e.g. 30",
             Models.ActionType.MuteAudio or Models.ActionType.UnmuteAudio => De ? "Kein Wert nötig." : "No value needed.",
             Models.ActionType.MediaControl => De ? "Steuert Spotify, YouTube & Co. wie die Medientasten der Tastatur." : "Controls Spotify, YouTube etc. like the keyboard media keys.",
+            Models.ActionType.ChangePowerPlan => De ? "Windows-Energieplan, der aktiviert wird." : "Windows power plan to activate.",
+            Models.ActionType.SendWebhook => De ? "URL, an die ein JSON-POST geschickt wird (http/https)." : "URL that receives a JSON POST (http/https).",
+            Models.ActionType.SystemNotification => De ? "Text der Benachrichtigung im Infobereich." : "Text of the tray notification.",
             Models.ActionType.SystemPower => De ? "Herunterfahren/Neustart lassen sich 15 Sek. lang mit \"shutdown /a\" abbrechen." : "Shut down/restart can be cancelled for 15 s with \"shutdown /a\".",
             _ => string.Empty,
         };
+
+        public string PickRunningTooltip => CurrentLanguage == "Deutsch" ? "Aus laufenden Apps und Prozessen auswählen" : "Pick from running apps and processes";
+        public string PickProcessTriggerTitle => CurrentLanguage == "Deutsch" ? "Prozess für den Trigger auswählen" : "Pick a process for the trigger";
+        public string PickProcessActionTitle => CurrentLanguage == "Deutsch" ? "Programm für die Aktion auswählen" : "Pick a program for the action";
+        public string PickProcessNoPathWarning => CurrentLanguage == "Deutsch"
+            ? "Der Pfad dieses Prozesses ist ohne Admin-Rechte nicht lesbar. Es wurde nur der Name eingetragen. Zum Starten bitte den Pfad über 📁 auswählen oder EventFlow Studio als Administrator starten."
+            : "This process's path can't be read without admin rights, so only its name was filled in. To start it, pick the file via 📁 or run EventFlow Studio as administrator.";
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

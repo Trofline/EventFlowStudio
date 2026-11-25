@@ -66,6 +66,8 @@ namespace EventFlowStudio.ViewModels
         public ICommand AddActionCommand { get; }
         public ICommand DeleteActionCommand { get; }
         public ICommand BrowseFileCommand { get; }
+        public ICommand PickProcessForTriggerCommand { get; }
+        public ICommand PickProcessForActionCommand { get; }
         public ICommand TestRunCommand { get; }
         public ICommand SwitchTabCommand { get; }
         public ICommand RestartAsAdminCommand { get; }
@@ -85,6 +87,8 @@ namespace EventFlowStudio.ViewModels
             DeleteActionCommand = new RelayCommand(action => { if (action is ActionItem a) SelectedPreset?.Actions.Remove(a); MarkDirty(); });
 
             BrowseFileCommand = new RelayCommand(action => { BrowseFile(action as ActionItem); MarkDirty(); });
+            PickProcessForTriggerCommand = new RelayCommand(trig => { if (PickProcessForTrigger(trig as TriggerCondition)) MarkDirty(); });
+            PickProcessForActionCommand = new RelayCommand(action => { if (PickProcessForAction(action as ActionItem)) MarkDirty(); });
             TestRunCommand = new RelayCommand(_ => { if (SelectedPreset != null) _engine.ExecutePresetActions(SelectedPreset); });
             SwitchTabCommand = new RelayCommand(index => SelectedTabIndex = Convert.ToInt32(index));
             RestartAsAdminCommand = new RelayCommand(_ => RestartAsAdmin());
@@ -228,6 +232,40 @@ namespace EventFlowStudio.ViewModels
             if (action == null) return;
             var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Anwendungen (*.exe)|*.exe|Alle Dateien (*.*)|*.*" };
             if (dialog.ShowDialog() == true) action.TargetPath = dialog.FileName;
+        }
+
+        private static Window? DialogOwner => System.Windows.Application.Current?.MainWindow;
+
+        // Trigger reagieren auf den Prozessnamen (ohne .exe), daher wird nur der Name übernommen.
+        private bool PickProcessForTrigger(TriggerCondition? trigger)
+        {
+            if (trigger == null) return false;
+            var picked = ProcessPicker.ProcessPickerWindow.Pick(DialogOwner, Strings.PickProcessTriggerTitle);
+            if (picked == null) return false;
+
+            trigger.TargetName = picked.ProcessName;
+            return true;
+        }
+
+        // Aktionen brauchen den vollen Pfad (Starten) bzw. funktionieren auch über den Namen (Beenden).
+        private bool PickProcessForAction(ActionItem? action)
+        {
+            if (action == null) return false;
+            var picked = ProcessPicker.ProcessPickerWindow.Pick(DialogOwner, Strings.PickProcessActionTitle);
+            if (picked == null) return false;
+
+            if (picked.ExecutablePath != null)
+            {
+                action.TargetPath = picked.ExecutablePath;
+            }
+            else
+            {
+                // Ohne Admin-Rechte ist der Pfad mancher Prozesse nicht lesbar. Zum Beenden reicht der Name.
+                action.TargetPath = picked.ProcessName + ".exe";
+                if (action.Type == ActionType.StartProcess)
+                    System.Windows.MessageBox.Show(Strings.PickProcessNoPathWarning, Strings.AppTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            return true;
         }
 
         public void SaveAll()
