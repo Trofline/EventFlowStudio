@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -12,15 +13,13 @@ namespace EventFlowStudio.Services
         private const int WM_KEYUP = 0x0101;
         private const int WM_SYSKEYUP = 0x0105;
 
-        // Gedrückt gehaltene Tasten senden laufend KEYDOWN. Wir melden nur das erste, sonst startet ein Hotkey-Profil dutzendfach.
-        // Falls ein KEYUP verloren geht (z.B. beim Sperren), gilt eine Taste nach 1,2 Sek. ohne Wiederholung wieder als losgelassen.
-        private readonly System.Collections.Generic.Dictionary<int, long> _keysDown = new();
-        private const long RepeatTimeoutMs = 1200;
-
         private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
         private readonly LowLevelKeyboardProc _proc;
         private IntPtr _hookID = IntPtr.Zero;
         private readonly Action<uint, uint> _onKeyPressed;
+        private readonly System.Windows.Threading.Dispatcher _dispatcher;
+        private readonly HashSet<int> _keysDown = new();
+        private bool _disposed;
 
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
@@ -41,6 +40,8 @@ namespace EventFlowStudio.Services
         public GlobalKeyboardHook(Action<uint, uint> onKeyPressed)
         {
             _onKeyPressed = onKeyPressed;
+            // Der Hook läuft auf dem Thread, der ihn installiert (UI-Thread). Die Auswertung wird dorthin gepostet.
+            _dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
             _proc = HookCallback;
             using (Process curProcess = Process.GetCurrentProcess())
             using (ProcessModule curModule = curProcess.MainModule!)
@@ -51,13 +52,17 @@ namespace EventFlowStudio.Services
 
         private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            if (nCode >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN))
+            if (nCode >= 0 && (wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP))
+            {
+                _keysDown.Remove(Marshal.ReadInt32(lParam));
+            }
+            else if (nCode >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN))
             {
                 int vkCode = Marshal.ReadInt32(lParam);
-                long now = Environment.TickCount64;
-                bool isRepeat = _keysDown.TryGetValue(vkCode, out long lastSeen) && now - lastSeen < RepeatTimeoutMs;
-                _keysDown[vkCode] = now;
-                if (isRepeat) return CallNextHookEx(_hookID, nCode, wParam, lParam);
+
+                // Gedrückt gehaltene Tasten senden Auto-Repeat. Ohne diese Sperre lief ein Profil
+                // dutzende Male, solange der Hotkey gehalten wurde.
+                if (!_keysDown.Add(vkCode)) return CallNextHookEx(_hookID, nCode, wParam, lParam);
 
                 // Modifiers checken
                 bool ctrl = (GetAsyncKeyState(0x11) & 0x8000) != 0;
@@ -71,12 +76,10 @@ namespace EventFlowStudio.Services
                 if (shift) modifiers |= 0x0004;
                 if (win) modifiers |= 0x0008;
 
-                _onKeyPressed?.Invoke(modifiers, (uint)vkCode);
-            }
-
-            else if (nCode >= 0 && (wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP))
-            {
-                _keysDown.Remove(Marshal.ReadInt32(lParam));
+                // Nicht direkt im Hook ausführen: Windows entfernt Low-Level-Hooks stillschweigend,
+                // wenn der Callback zu lange braucht (z.B. Process.Start oder ein UAC-Dialog).
+                uint vk = (uint)vkCode;
+                _dispatcher.BeginInvoke(() => _onKeyPressed(modifiers, vk));
             }
 
             // WICHTIG: IMMER CallNextHookEx aufrufen, damit der Input für Spiele NICHT blockiert wird!
@@ -85,7 +88,10 @@ namespace EventFlowStudio.Services
 
         public void Dispose()
         {
-            UnhookWindowsHookEx(_hookID);
+            if (_disposed) return;
+            _disposed = true;
+            if (_hookID != IntPtr.Zero) UnhookWindowsHookEx(_hookID);
+            _hookID = IntPtr.Zero;
         }
     }
 }

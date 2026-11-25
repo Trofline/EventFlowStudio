@@ -28,10 +28,6 @@ namespace EventFlowStudio.ViewModels
         public Array TriggerTypes => Enum.GetValues(typeof(TriggerType));
         public Array ActionTypes => Enum.GetValues(typeof(ActionType));
         public Array LaunchStates => Enum.GetValues(typeof(WindowLaunchState));
-        public Array PowerPlanTypes => Enum.GetValues(typeof(PowerPlanType));
-        public Array AudioCommands => Enum.GetValues(typeof(AudioCommand));
-        public Array MediaKeys => Enum.GetValues(typeof(MediaKey));
-        public Array SystemPowerCommands => Enum.GetValues(typeof(SystemPowerCommand));
 
         public string[] AvailableLanguages => new[] { "Deutsch", "English" };
 
@@ -43,21 +39,6 @@ namespace EventFlowStudio.ViewModels
         public bool IsDirty { get => _isDirty; set { if (_isDirty != value) { _isDirty = value; OnPropertyChanged(); } } }
 
         public event Action? ToggleMainWindowRequested;
-        // Benachrichtigungen, die vor dem Anmelden des Fensters ausgelöst werden (z. B. AppStartup-Trigger),
-        // werden zwischengespeichert und beim Anmelden nachgereicht.
-        private readonly System.Collections.Generic.List<(string Title, string Message)> _pendingNotifications = new();
-        private Action<string, string>? _notificationHandler;
-        public event Action<string, string>? NotificationRequested
-        {
-            add
-            {
-                _notificationHandler += value;
-                if (value == null) return;
-                foreach (var (title, message) in _pendingNotifications) value(title, message);
-                _pendingNotifications.Clear();
-            }
-            remove => _notificationHandler -= value;
-        }
 
         public ICommand AddPresetCommand { get; }
         public ICommand DeletePresetCommand { get; }
@@ -94,11 +75,6 @@ namespace EventFlowStudio.ViewModels
 
             _engine.LogMessage += AppendLog;
             _engine.ToggleMainWindow += () => ToggleMainWindowRequested?.Invoke();
-            _engine.NotificationRequested += (title, message) =>
-            {
-                if (_notificationHandler != null) _notificationHandler.Invoke(title, message);
-                else _pendingNotifications.Add((title, message));
-            };
 
             _engine.Initialize();
 
@@ -111,9 +87,9 @@ namespace EventFlowStudio.ViewModels
                 }
             };
 
-            // Änderungen an Profilen, Triggern und Aktionen (auch neu hinzugefügten) als ungespeichert markieren
-            Presets.CollectionChanged += OnTrackedCollectionChanged;
-            foreach (var p in Presets) Track(p);
+            // Jede Änderung an Profilen, Triggern und Aktionen (auch neu hinzugefügten) markiert "nicht gespeichert".
+            // Vorher wurden nur Name/Aktiv bereits vorhandener Profile erkannt.
+            TrackCollection(Presets);
 
             EnsureAdminState();
             EnsureAutoStart();
@@ -126,48 +102,52 @@ namespace EventFlowStudio.ViewModels
 
         public void MarkDirty() => IsDirty = true;
 
-        public void Shutdown() => _engine.Shutdown();
-
         private const int MaxLogLines = 300;
-        private readonly object _logLock = new();
+        private readonly System.Collections.Generic.LinkedList<string> _logLines = new();
 
-        // Das Log wächst sonst über Tage unbegrenzt und wird bei jeder Zeile komplett neu gezeichnet
+        // Logs kommen auch aus Hintergrund-Threads. Sie werden auf dem UI-Thread angehängt und begrenzt,
+        // damit das Log bei tagelangem Laufen im Tray nicht endlos wächst.
         private void AppendLog(string msg)
         {
-            lock (_logLock)
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
             {
-                string text = $"[{DateTime.Now:HH:mm:ss}] {msg}\n" + _logOutput;
-                int idx = -1;
-                for (int i = 0; i < MaxLogLines; i++) { idx = text.IndexOf('\n', idx + 1); if (idx < 0) break; }
-                if (idx >= 0 && idx < text.Length - 1) text = text.Substring(0, idx + 1);
-                LogOutput = text;
+                dispatcher.BeginInvoke(() => AppendLog(msg));
+                return;
+            }
+
+            _logLines.AddFirst($"[{DateTime.Now:HH:mm:ss}] {msg}");
+            while (_logLines.Count > MaxLogLines) _logLines.RemoveLast();
+            LogOutput = string.Join("\n", _logLines);
+        }
+
+        private void OnItemChanged(object? sender, PropertyChangedEventArgs e) => MarkDirty();
+
+        private void TrackCollection<T>(ObservableCollection<T> collection) where T : INotifyPropertyChanged
+        {
+            collection.CollectionChanged += (s, e) =>
+            {
+                if (e.OldItems != null) foreach (T item in e.OldItems) Untrack(item);
+                if (e.NewItems != null) foreach (T item in e.NewItems) Track(item);
+                MarkDirty();
+            };
+            foreach (var item in collection) Track(item);
+        }
+
+        private void Track(INotifyPropertyChanged item)
+        {
+            item.PropertyChanged -= OnItemChanged;
+            item.PropertyChanged += OnItemChanged;
+            if (item is Preset preset)
+            {
+                TrackCollection(preset.Triggers);
+                TrackCollection(preset.Actions);
             }
         }
 
-        private void Track(object? item)
-        {
-            switch (item)
-            {
-                case Preset p:
-                    p.PropertyChanged -= OnTrackedPropertyChanged; p.PropertyChanged += OnTrackedPropertyChanged;
-                    p.Triggers.CollectionChanged -= OnTrackedCollectionChanged; p.Triggers.CollectionChanged += OnTrackedCollectionChanged;
-                    p.Actions.CollectionChanged -= OnTrackedCollectionChanged; p.Actions.CollectionChanged += OnTrackedCollectionChanged;
-                    foreach (var t in p.Triggers) Track(t);
-                    foreach (var a in p.Actions) Track(a);
-                    break;
-                case INotifyPropertyChanged npc:
-                    npc.PropertyChanged -= OnTrackedPropertyChanged; npc.PropertyChanged += OnTrackedPropertyChanged;
-                    break;
-            }
-        }
+        private void Untrack(INotifyPropertyChanged item) => item.PropertyChanged -= OnItemChanged;
 
-        private void OnTrackedPropertyChanged(object? sender, PropertyChangedEventArgs e) => MarkDirty();
-
-        private void OnTrackedCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
-        {
-            if (e.NewItems != null) foreach (var item in e.NewItems) Track(item);
-            MarkDirty();
-        }
+        public void Shutdown() => _engine.Shutdown();
 
         private void ExportPresets()
         {
@@ -197,7 +177,7 @@ namespace EventFlowStudio.ViewModels
             {
                 using RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true)!;
                 string appName = "EventFlowStudio";
-                string appPath = Process.GetCurrentProcess().MainModule!.FileName;
+                string appPath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName;
 
                 if (AppSettings.AutoStartWindows) key.SetValue(appName, $"\"{appPath}\"");
                 else key.DeleteValue(appName, false);
@@ -209,7 +189,9 @@ namespace EventFlowStudio.ViewModels
         {
             try
             {
-                Process.Start(new ProcessStartInfo { FileName = Process.GetCurrentProcess().MainModule!.FileName, UseShellExecute = true, Verb = "runas" });
+                Process.Start(new ProcessStartInfo { FileName = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName, UseShellExecute = true, Verb = "runas" });
+                // Die neue Instanz wartet, bis diese hier ihre Single-Instance-Sperre freigegeben hat
+                App.ReleaseSingleInstance();
                 Environment.Exit(0);
             }
             catch { }
@@ -228,8 +210,7 @@ namespace EventFlowStudio.ViewModels
         public void SaveAll()
         {
             EnsureAutoStart();
-            _engine.SavePresets();
-            IsDirty = false;
+            if (_engine.SavePresets()) IsDirty = false;
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -245,31 +226,26 @@ namespace EventFlowStudio.ViewModels
         public event EventHandler? CanExecuteChanged { add { } remove { } }
     }
 
-    /// <summary>
-    /// Übersetzt Enum-Werte und Hinweise. values[0] = Wert, values[1] = aktuelle Sprache (nur damit die Anzeige beim Sprachwechsel neu lädt).
-    /// ConverterParameter: "name" (Standard), "triggerHint" oder "actionHint".
-    /// </summary>
-    public class LocalizedTextConverter : System.Windows.Data.IMultiValueConverter
-    {
-        public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
-        {
-            var value = values.Length > 0 ? values[0] : null;
-            if (value == DependencyProperty.UnsetValue) return string.Empty;
-            var loc = LocalizationService.Instance;
-            return (parameter as string) switch
-            {
-                "triggerHint" => loc.TriggerHint(value),
-                "actionHint" => loc.ActionHint(value),
-                _ => loc.DisplayName(value),
-            };
-        }
-        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
-    }
-
     public class InverseBooleanToVisibilityConverter : System.Windows.Data.IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
             (bool)value ? Visibility.Collapsed : Visibility.Visible;
         public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotImplementedException();
+    }
+
+    // Zeigt Enum-Werte übersetzt an. Binding 0 = Wert, Binding 1 = Strings.CurrentLanguage (nur für die Aktualisierung).
+    // ConverterParameter "hint" liefert statt des Namens den Eingabe-Hinweis.
+    public class EnumTextConverter : System.Windows.Data.IMultiValueConverter
+    {
+        public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            var value = values.Length > 0 ? values[0] : null;
+            if (value == null || value == DependencyProperty.UnsetValue) return string.Empty;
+            return (parameter as string) == "hint"
+                ? LocalizationService.Instance.GetHint(value)
+                : LocalizationService.Instance.GetDisplayName(value);
+        }
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
     }
 }

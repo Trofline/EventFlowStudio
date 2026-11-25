@@ -1,5 +1,5 @@
-﻿using System.Configuration;
-using System.Data;
+﻿using System;
+using System.Threading;
 using System.Windows;
 
 namespace EventFlowStudio
@@ -9,34 +9,73 @@ namespace EventFlowStudio
     /// </summary>
     public partial class App : System.Windows.Application
     {
-        private static readonly string CrashLog = System.IO.Path.Combine(
-            System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "EventFlowStudio", "crash.log");
+        // Pro Windows-Benutzer nur eine Instanz. Zwei Instanzen (z.B. Autostart + manueller Start)
+        // hätten jedes Profil doppelt ausgeführt.
+        private const string MutexName = @"Local\EventFlowStudio_SingleInstance";
+        private const string ShowEventName = @"Local\EventFlowStudio_ShowWindow";
+
+        private static Mutex? _instanceMutex;
+        private static bool _ownsMutex;
+        private EventWaitHandle? _showEvent;
+        private RegisteredWaitHandle? _showWait;
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            // Ein Fehler in einer Aktion oder einem Trigger soll die Tray-App nicht still beenden
-            DispatcherUnhandledException += (s, args) =>
-            {
-                WriteCrashLog(args.Exception);
-                args.Handled = true;
-                System.Windows.MessageBox.Show($"Unerwarteter Fehler: {args.Exception.Message}\n\nDetails: {CrashLog}",
-                    "EventFlow Studio", MessageBoxButton.OK, MessageBoxImage.Error);
-            };
-            System.AppDomain.CurrentDomain.UnhandledException += (s, args) => WriteCrashLog(args.ExceptionObject as System.Exception);
-            System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (s, args) => { WriteCrashLog(args.Exception); args.SetObserved(); };
-
-            base.OnStartup(e);
-        }
-
-        private static void WriteCrashLog(System.Exception? ex)
-        {
-            if (ex == null) return;
+            _instanceMutex = new Mutex(false, MutexName);
             try
             {
-                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(CrashLog)!);
-                System.IO.File.AppendAllText(CrashLog, $"[{System.DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}\n\n");
+                // Beim Neustart als Admin läuft die alte Instanz noch kurz weiter, daher etwas warten
+                _ownsMutex = _instanceMutex.WaitOne(TimeSpan.FromSeconds(5));
             }
-            catch { }
+            catch (AbandonedMutexException)
+            {
+                _ownsMutex = true; // Vorherige Instanz ist abgestürzt
+            }
+
+            if (!_ownsMutex)
+            {
+                // Andere Instanz läuft: deren Fenster nach vorne holen und selbst beenden
+                try
+                {
+                    if (EventWaitHandle.TryOpenExisting(ShowEventName, out var existing))
+                    {
+                        using (existing) existing.Set();
+                    }
+                }
+                catch { }
+                Shutdown();
+                return;
+            }
+
+            _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+            _showWait = ThreadPool.RegisterWaitForSingleObject(_showEvent, (_, _) =>
+                Dispatcher.BeginInvoke(() => (MainWindow as MainWindow)?.ShowMainWindow()), null, Timeout.Infinite, false);
+
+            base.OnStartup(e);
+
+            // Fenster erst nach der Instanz-Prüfung erzeugen (statt StartupUri), sonst würde auch
+            // die zweite Instanz kurz die Engine starten und Profile auslösen.
+            var window = new MainWindow();
+            MainWindow = window;
+            // "Minimiert starten" mit Tray: Fenster gar nicht erst anzeigen (vorher blitzte es kurz auf)
+            if (!window.StartsHiddenInTray) window.Show();
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            _showWait?.Unregister(null);
+            _showEvent?.Dispose();
+            ReleaseSingleInstance();
+            base.OnExit(e);
+        }
+
+        public static void ReleaseSingleInstance()
+        {
+            if (_ownsMutex)
+            {
+                _ownsMutex = false;
+                try { _instanceMutex?.ReleaseMutex(); } catch { }
+            }
         }
     }
 
